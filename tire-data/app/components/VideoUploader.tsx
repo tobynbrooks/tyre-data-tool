@@ -1,13 +1,128 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
-import { FFmpeg } from '@ffmpeg/ffmpeg';
-import { fetchFile, toBlobURL } from '@ffmpeg/util';
+import { useState, useRef } from 'react';
 import type { ExtractedFrame } from '../types/types';
 
 interface VideoUploaderProps {
   onFramesExtracted: (frames: ExtractedFrame[]) => void;
 }
+
+interface FrameExtractionConfig {
+  maxFrames: number;
+  framesPerSecond: number;
+  quality: number;
+  scaleFactor: number;
+  randomize: boolean;
+}
+
+const DEFAULT_CONFIG: FrameExtractionConfig = {
+  maxFrames: 5,
+  framesPerSecond: 1,
+  quality: 0.8,
+  scaleFactor: 0.5,
+  randomize: false
+};
+
+const extractFramesFromVideo = async (
+  file: File,
+  config: FrameExtractionConfig = DEFAULT_CONFIG
+): Promise<ExtractedFrame[]> => {
+  return new Promise((resolve, reject) => {
+    const video = document.createElement('video');
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    const frames: ExtractedFrame[] = [];
+    
+    video.playsInline = true;
+    video.muted = true;
+    video.autoplay = false;
+    
+    const videoUrl = URL.createObjectURL(file);
+    video.src = videoUrl;
+    
+    video.onloadeddata = () => {
+      console.log('Video loaded:', {
+        duration: video.duration,
+        dimensions: `${video.videoWidth}x${video.videoHeight}`
+      });
+
+      canvas.width = video.videoWidth * config.scaleFactor;
+      canvas.height = video.videoHeight * config.scaleFactor;
+      
+      if (!ctx) {
+        URL.revokeObjectURL(videoUrl);
+        reject(new Error('Canvas context not available'));
+        return;
+      }
+
+      const frameInterval = 1 / config.framesPerSecond;
+      const totalPossibleFrames = Math.floor(video.duration / frameInterval);
+      const maxFrames = Math.min(config.maxFrames, totalPossibleFrames);
+
+      let timestamps = Array.from(
+        { length: totalPossibleFrames },
+        (_, i) => i * frameInterval
+      );
+
+      if (config.randomize) {
+        timestamps = timestamps.sort(() => Math.random() - 0.5);
+      }
+      timestamps = timestamps.slice(0, maxFrames).sort((a, b) => a - b);
+
+      let currentFrame = 0;
+
+      const processNextFrame = () => {
+        if (currentFrame >= timestamps.length) {
+          URL.revokeObjectURL(videoUrl);
+          resolve(frames);
+          return;
+        }
+
+        video.currentTime = timestamps[currentFrame];
+      };
+
+      video.onseeked = async () => {
+        try {
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+          
+          // Convert canvas to blob
+          const blob = await new Promise<Blob>((resolve, reject) => {
+            canvas.toBlob(
+              (blob) => {
+                if (blob) resolve(blob);
+                else reject(new Error('Failed to create blob'));
+              },
+              'image/jpeg',
+              config.quality
+            );
+          });
+
+          const url = URL.createObjectURL(blob);
+          
+          frames.push({
+            frameNumber: currentFrame,
+            blob,
+            url,
+          });
+
+          currentFrame++;
+          processNextFrame();
+        } catch (error) {
+          console.error('Frame capture error:', error);
+          currentFrame++;
+          processNextFrame();
+        }
+      };
+
+      processNextFrame();
+    };
+
+    video.onerror = () => {
+      URL.revokeObjectURL(videoUrl);
+      reject(new Error('Error loading video'));
+    };
+  });
+};
 
 export default function VideoUploader({ onFramesExtracted }: VideoUploaderProps) {
   const [video, setVideo] = useState<File | null>(null);
@@ -15,29 +130,7 @@ export default function VideoUploader({ onFramesExtracted }: VideoUploaderProps)
   const [frames, setFrames] = useState<ExtractedFrame[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>('');
-  const ffmpegRef = useRef<FFmpeg | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
-
-  useEffect(() => {
-    loadFFmpeg();
-  }, []);
-
-  // Initialize FFmpeg
-  const loadFFmpeg = async () => {
-    try {
-      const ffmpeg = new FFmpeg();
-      const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.4/dist/umd';
-      
-      await ffmpeg.load({
-        coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
-        wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
-      });
-      
-      ffmpegRef.current = ffmpeg;
-    } catch (err) {
-      setError('Failed to load video processor. Please try again.');
-    }
-  };
 
   // Handle video file selection
   const handleVideoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -57,44 +150,49 @@ export default function VideoUploader({ onFramesExtracted }: VideoUploaderProps)
 
   // Extract frames from video
   const extractFrames = async () => {
-    if (!video || !ffmpegRef.current) return;
+    if (!video) return;
     setLoading(true);
     setError('');
 
     try {
-      const ffmpeg = ffmpegRef.current;
-      
-      await ffmpeg.writeFile('input.mp4', await fetchFile(video));
-
-      await ffmpeg.exec([
-        '-i', 'input.mp4',
-        '-vf', 'select=eq(n\\,0)+eq(n\\,25)+eq(n\\,50)+eq(n\\,75)+eq(n\\,100)',
-        '-vsync', '0',
-        '-frame_pts', '1',
-        'frame_%d.jpg'
-      ]);
-
-      const extractedFrames: ExtractedFrame[] = [];
-      for (let i = 0; i < 5; i++) {
-        const frameData = await ffmpeg.readFile(`frame_${i}.jpg`);
-        const blob = new Blob([frameData], { type: 'image/jpeg' });
-        const url = URL.createObjectURL(blob);
-        
-        extractedFrames.push({
-          frameNumber: i,
-          blob,
-          url,
-        });
-      }
-
+      const extractedFrames = await extractFramesFromVideo(video);
+      console.log(`Successfully extracted ${extractedFrames.length} frames`);
       setFrames(extractedFrames);
       onFramesExtracted(extractedFrames);
     } catch (error) {
-      setError('Failed to extract frames. Please try again.');
-      console.error('Error extracting frames:', error);
+      console.error('Frame extraction error:', error);
+      setError('Failed to extract frames. Please try a different video or format.');
     } finally {
       setLoading(false);
     }
+  };
+
+  const renderFrameThumbnails = () => {
+    if (frames.length === 0) return null;
+
+    return (
+      <div className="space-y-4">
+        <h3 className="text-lg font-medium">Extracted Frames</h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+          {frames.map((frame) => (
+            <div 
+              key={frame.frameNumber} 
+              className="relative aspect-w-16 aspect-h-9 bg-gray-100 rounded-lg overflow-hidden hover:shadow-lg transition-shadow"
+            >
+              <img
+                src={frame.url}
+                alt={`Frame ${frame.frameNumber + 1}`}
+                className="w-full h-full object-contain"
+                loading="lazy"
+              />
+              <div className="absolute bottom-2 right-2 bg-black bg-opacity-50 text-white px-2 py-1 rounded text-sm">
+                Frame {frame.frameNumber + 1}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
   };
 
   return (
@@ -171,26 +269,8 @@ export default function VideoUploader({ onFramesExtracted }: VideoUploaderProps)
         )}
       </button>
 
-      {/* Extracted Frames Grid */}
-      {frames.length > 0 && (
-        <div className="space-y-4">
-          <h3 className="text-lg font-medium">Extracted Frames</h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
-            {frames.map((frame) => (
-              <div key={frame.frameNumber} className="relative aspect-w-16 aspect-h-9 bg-gray-100 rounded-lg overflow-hidden">
-                <img
-                  src={frame.url}
-                  alt={`Frame ${frame.frameNumber + 1}`}
-                  className="w-full h-full object-contain"
-                />
-                <div className="absolute bottom-2 right-2 bg-black bg-opacity-50 text-white px-2 py-1 rounded text-sm">
-                  Frame {frame.frameNumber + 1}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      {/* Render Frame Thumbnails */}
+      {renderFrameThumbnails()}
     </div>
   );
 }
