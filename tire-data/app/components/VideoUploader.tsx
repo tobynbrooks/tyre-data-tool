@@ -4,7 +4,7 @@ import { useState, useRef } from 'react';
 import type { ExtractedFrame } from '../types/types';
 
 interface VideoUploaderProps {
-  onFramesExtracted: (frames: ExtractedFrame[]) => void;
+  onFramesExtracted: (frames: ExtractedFrame[], videoUrl: string) => void;
 }
 
 interface FrameExtractionConfig {
@@ -131,37 +131,71 @@ export default function VideoUploader({ onFramesExtracted }: VideoUploaderProps)
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>('');
   const videoRef = useRef<HTMLVideoElement>(null);
+  const [permanentVideoUrl, setPermanentVideoUrl] = useState<string>('');
 
   // Handle video file selection
   const handleVideoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Check file size (100MB limit)
-    if (file.size > 100 * 1024 * 1024) {
-      setError('File size must be less than 100MB');
-      return;
-    }
+    try {
+      const formData = new FormData();
+      formData.append('video', file);
 
-    setVideo(file);
-    setVideoPreview(URL.createObjectURL(file));
-    setError('');
+      console.log('Uploading video:', file.name);
+
+      const uploadResponse = await fetch('/api/upload', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const responseData = await uploadResponse.json();
+      console.log('Upload response:', responseData);
+
+      if (!uploadResponse.ok || !responseData.videoUrl) {
+        throw new Error('Failed to upload video or get URL');
+      }
+
+      const permanentUrl = responseData.videoUrl;
+      console.log('Setting permanent URL:', permanentUrl);
+
+      setVideo(file);
+      setVideoPreview(URL.createObjectURL(file));
+      setPermanentVideoUrl(permanentUrl);
+
+      // Extract frames immediately after upload
+      const extractedFrames = await extractFramesFromVideo(file);
+      setFrames(extractedFrames);
+      
+      // Pass both frames and permanent URL to parent
+      console.log('Passing to parent - frames and URL:', {
+        framesCount: extractedFrames.length,
+        videoUrl: permanentUrl
+      });
+      onFramesExtracted(extractedFrames, permanentUrl);
+
+    } catch (error) {
+      console.error('Upload error:', error);
+      setError('Failed to upload video');
+    }
   };
 
   // Extract frames from video
   const extractFrames = async () => {
     if (!video) return;
+    
+    console.log('Starting frame extraction, permanent URL:', permanentVideoUrl); // Debug log
     setLoading(true);
     setError('');
 
     try {
       const extractedFrames = await extractFramesFromVideo(video);
-      console.log(`Successfully extracted ${extractedFrames.length} frames`);
       setFrames(extractedFrames);
-      onFramesExtracted(extractedFrames);
+      onFramesExtracted(extractedFrames, permanentVideoUrl); // Use the stored permanent URL
+      console.log('Frames extracted, passed URL to parent:', permanentVideoUrl);
     } catch (error) {
       console.error('Frame extraction error:', error);
-      setError('Failed to extract frames. Please try a different video or format.');
+      setError('Failed to extract frames');
     } finally {
       setLoading(false);
     }

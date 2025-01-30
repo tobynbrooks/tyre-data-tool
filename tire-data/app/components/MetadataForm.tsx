@@ -1,43 +1,70 @@
 'use client';
 
-import { useState, FormEvent } from 'react';
+import { useState, FormEvent, useEffect } from 'react';
 import type { TireMetadata, ExtractedFrame } from '../types/types';
 import { tireBrands, tireModels } from '../data/tyreData';
 
 interface MetadataFormProps {
   frames?: ExtractedFrame[];
+  videoUrl?: string;
 }
 
-export default function MetadataForm({ frames }: MetadataFormProps) {
-  const [formData, setFormData] = useState<Partial<TireMetadata>>({
-    position: undefined,
-    leftRegionDepth: 0,
-    centerRegionDepth: 0,
-    rightRegionDepth: 0,
-    brand: '',
-    model: '',
-    size: '',
-    loadIndex: '',
-    speedRating: '',
-    vehicle: {
-      make: '',
+export default function MetadataForm({ frames, videoUrl }: MetadataFormProps) {
+  console.log('MetadataForm initialized with videoUrl:', videoUrl);
+
+  const [formData, setFormData] = useState<Partial<TireMetadata>>(() => {
+    console.log('Initializing form data with videoUrl:', videoUrl);
+    return {
+      position: undefined,
+      leftRegionDepth: 0,
+      centerRegionDepth: 0,
+      rightRegionDepth: 0,
+      brand: '',
       model: '',
-      year: new Date().getFullYear(),
-    },
-    weather: {
-      condition: 'Dry',
-      temperature: 20,
-    },
-    tireCleanliness: 'Clean',
-    damageType: 'none',
-    measurementDevice: '',
-    timestamp: new Date(),
-    lightingCondition: 'Good',
+      size: '',
+      loadIndex: '',
+      speedRating: '',
+      vehicle: {
+        make: '',
+        model: '',
+        year: new Date().getFullYear(),
+      },
+      weather: {
+        condition: 'Dry',
+        temperature: 20,
+      },
+      tireCleanliness: 'Clean',
+      damageType: 'none',
+      measurementDevice: '',
+      timestamp: new Date(),
+      lightingCondition: 'Good',
+      originalVideoUrl: videoUrl || '',
+    };
   });
+
+  // Update form data when videoUrl changes
+  useEffect(() => {
+    console.log('videoUrl changed in MetadataForm:', videoUrl);
+    if (videoUrl) {
+      setFormData(prev => {
+        console.log('Updating formData with new videoUrl:', videoUrl);
+        return {
+          ...prev,
+          originalVideoUrl: videoUrl
+        };
+      });
+    }
+  }, [videoUrl]);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     
+    console.log('Submitting form with data:', {
+      ...formData,
+      videoUrl,
+      originalVideoUrl: formData.originalVideoUrl,
+    });
+
     // Validate required fields before submission
     if (!formData.position) {
       alert('Please select a tire position');
@@ -55,38 +82,25 @@ export default function MetadataForm({ frames }: MetadataFormProps) {
     });
 
     try {
+      // Prepare submission data with custom brand/model handling
+      const submissionData = {
+        ...formData,
+        frames,
+        // Use custom brand if 'other' is selected
+        brand: formData.brand === 'other' ? formData.customBrand : formData.brand,
+        // Use custom model if 'other' is selected
+        model: formData.model === 'other' ? formData.customModel : formData.model,
+        originalVideoUrl: videoUrl || formData.originalVideoUrl,
+      };
+
+      console.log('Final submission data:', submissionData);
+
       const response = await fetch('/api/measurements', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          position: formData.position,
-          leftRegionDepth: formData.leftRegionDepth || 0,
-          centerRegionDepth: formData.centerRegionDepth || 0,
-          rightRegionDepth: formData.rightRegionDepth || 0,
-          brand: formData.brand || '',
-          model: formData.model || '',
-          size: formData.size || '',
-          loadIndex: formData.loadIndex || '',
-          speedRating: formData.speedRating || '',
-          vehicle: {
-            make: formData.vehicle?.make || '',
-            model: formData.vehicle?.model || '',
-            year: formData.vehicle?.year || new Date().getFullYear(),
-          },
-          weather: {
-            condition: formData.weather?.condition || 'Dry',
-            temperature: formData.weather?.temperature || 20,
-          },
-          tireCleanliness: formData.tireCleanliness || 'Clean',
-          lightingCondition: formData.lightingCondition || 'Good',
-          damageType: formData.damageType || 'none',
-          damageDescription: formData.damageDescription || '',
-          measurementDevice: formData.measurementDevice || '',
-          timestamp: formData.timestamp || new Date().toISOString(),
-          frames: frames
-        })
+        body: JSON.stringify(submissionData)
       });
 
       const data = await response.json();
@@ -100,6 +114,7 @@ export default function MetadataForm({ frames }: MetadataFormProps) {
       alert('Measurement saved successfully!');
       
     } catch (error) {
+      console.error('Submit error:', error);
       console.error('Full error details:', error);
       alert('Failed to save measurement: ' + (error instanceof Error ? error.message : String(error)));
     }
@@ -112,8 +127,19 @@ export default function MetadataForm({ frames }: MetadataFormProps) {
       });
       
       const data = await response.json();
+      
+      // Add this to check table structure
+      const tablesResponse = await fetch('/api/measurements', {
+        method: 'GET',
+        headers: {
+          'x-check-tables': 'true'
+        }
+      });
+      const tablesData = await tablesResponse.json();
+      
       console.log('Database test result:', data);
-      alert(JSON.stringify(data, null, 2));
+      console.log('Tables structure:', tablesData);
+      alert(JSON.stringify({data, tables: tablesData}, null, 2));
       
     } catch (error) {
       console.error('Database test error:', error);

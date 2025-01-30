@@ -47,10 +47,23 @@ export interface TireMetadata {
     // Load and Speed
     loadIndex: string;    // e.g., "91"
     speedRating: string;  // e.g., "Y"
+  
+    originalVideoUrl: string;
   }
 
 export interface ExtractedFrame {
   frameNumber: number;
   blob: Blob;
   url: string;
+}
+
+export interface Vehicle {
+  make: string;
+  model: string;
+  year: number;
+}
+
+export interface Weather {
+  condition: string;
+  temperature: number;
 }

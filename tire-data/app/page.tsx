@@ -6,6 +6,16 @@ import type { ExtractedFrame } from './types/types';
 
 export default function Home() {
   const [extractedFrames, setExtractedFrames] = useState<ExtractedFrame[]>([]);
+  const [videoUrl, setVideoUrl] = useState<string>('');
+
+  const handleFramesExtracted = (frames: ExtractedFrame[], url: string) => {
+    console.log('Home received frames and URL:', {
+      framesCount: frames.length,
+      videoUrl: url
+    });
+    setExtractedFrames(frames);
+    setVideoUrl(url);
+  };
 
   return (
     <main className="min-h-screen bg-gray-50">
@@ -33,11 +43,11 @@ export default function Home() {
         <div className="bg-white rounded-lg shadow">
           <div className="p-6">
             <h2 className="text-lg font-semibold mb-4">Upload Tire Video</h2>
-            <VideoUploader onFramesExtracted={setExtractedFrames} />
+            <VideoUploader onFramesExtracted={handleFramesExtracted} />
           </div>
         </div>
 
-        <MetadataForm frames={extractedFrames} />
+        <MetadataForm frames={extractedFrames} videoUrl={videoUrl} />
 
         {/* Footer */}
         <footer className="mt-8 text-center text-gray-500 text-sm">
