@@ -1,11 +1,11 @@
 import { NextResponse } from 'next/server';
-import db from '../../db/index';
+import db from '../../db';
 import type { ExtractedFrame } from '../../types/types';
 
 export async function POST(request: Request) {
   try {
     const data = await request.json();
-    console.log('API received data:', data);
+    console.log('Received POST data:', data);
 
     // Validate required fields
     if (!data.position) {
@@ -16,9 +16,11 @@ export async function POST(request: Request) {
     }
 
     // Start a transaction
-    const result = db.transaction(() => {
-      // Insert tire measurement
-      const measurementStmt = db.prepare(`
+    db.prepare('BEGIN').run();
+    
+    try {
+      // Insert tire measurement with exact schema match
+      const result = db.prepare(`
         INSERT INTO tire_measurements (
           position,
           left_depth,
@@ -26,7 +28,10 @@ export async function POST(request: Request) {
           right_depth,
           brand,
           model,
-          size,
+          size_width,          /* matches schema */
+          size_aspect_ratio,   /* matches schema */
+          size_diameter,       /* matches schema */
+          size_construction,   /* matches schema */
           load_index,
           speed_rating,
           vehicle_make,
@@ -40,6 +45,7 @@ export async function POST(request: Request) {
           damage_description,
           measurement_device,
           original_video_url
+          /* timestamp will be set automatically */
         ) VALUES (
           @position,
           @leftDepth,
@@ -47,7 +53,10 @@ export async function POST(request: Request) {
           @rightDepth,
           @brand,
           @model,
-          @size,
+          @width,
+          @aspectRatio,
+          @diameter,
+          @construction,
           @loadIndex,
           @speedRating,
           @vehicleMake,
@@ -62,35 +71,34 @@ export async function POST(request: Request) {
           @measurementDevice,
           @originalVideoUrl
         )
-      `);
-
-      const measurementResult = measurementStmt.run({
+      `).run({
         position: data.position,
         leftDepth: data.leftRegionDepth,
         centerDepth: data.centerRegionDepth,
         rightDepth: data.rightRegionDepth,
         brand: data.brand,
         model: data.model,
-        size: data.size,
+        width: data.width,                    // matches schema name
+        aspectRatio: data.aspectRatio,        // matches schema name
+        diameter: data.diameter,              // matches schema name
+        construction: data.construction,      // matches schema name
         loadIndex: data.loadIndex,
         speedRating: data.speedRating,
-        vehicleMake: data.vehicle?.make,
-        vehicleModel: data.vehicle?.model,
-        vehicleYear: data.vehicle?.year,
-        weatherCondition: data.weather?.condition,
-        weatherTemperature: data.weather?.temperature,
+        vehicleMake: data.vehicle.make,
+        vehicleModel: data.vehicle.model,
+        vehicleYear: data.vehicle.year,
+        weatherCondition: data.weather.condition,
+        weatherTemperature: data.weather.temperature,
         tireCleanliness: data.tireCleanliness,
         lightingCondition: data.lightingCondition,
         damageType: data.damageType,
         damageDescription: data.damageDescription,
         measurementDevice: data.measurementDevice,
-        originalVideoUrl: data.originalVideoUrl || ''
+        originalVideoUrl: data.originalVideoUrl
       });
 
-      const measurementId = measurementResult.lastInsertRowid;
-
       // Insert frame images if they exist
-      if (data.frames && Array.isArray(data.frames) && data.frames.length > 0) {
+      if (data.frames && Array.isArray(data.frames)) {
         const frameStmt = db.prepare(`
           INSERT INTO frame_images (tire_measurement_id, frame_url)
           VALUES (@measurementId, @frameUrl)
@@ -98,27 +106,30 @@ export async function POST(request: Request) {
 
         for (const frame of data.frames) {
           frameStmt.run({
-            measurementId,
+            measurementId: result.lastInsertRowid,
             frameUrl: frame.url
           });
         }
       }
 
-      return measurementId;
-    })();
+      // Commit transaction
+      db.prepare('COMMIT').run();
 
-    return NextResponse.json({
-      status: 'success',
-      data: { id: result }
-    });
+      return NextResponse.json({
+        status: 'success',
+        data: { id: result.lastInsertRowid }
+      });
 
+    } catch (error) {
+      // Rollback on error
+      db.prepare('ROLLBACK').run();
+      console.error('Database error:', error);
+      throw error;
+    }
   } catch (error) {
     console.error('POST error:', error);
     return NextResponse.json(
-      { 
-        status: 'error',
-        message: error instanceof Error ? error.message : 'Failed to save measurement' 
-      },
+      { message: error instanceof Error ? error.message : 'Failed to save measurement' },
       { status: 500 }
     );
   }
@@ -126,37 +137,41 @@ export async function POST(request: Request) {
 
 export async function GET(request: Request) {
   try {
-    // Check if we're requesting table structure
+    // Add debug logging
+    console.log('GET request received');
+    
+    // Check if we're testing table structure
     const checkTables = request.headers.get('x-check-tables');
+    console.log('Check tables header:', checkTables);
     
     if (checkTables) {
+      // Simple query to test connection
       const tables = db.prepare(`
         SELECT name FROM sqlite_master 
         WHERE type='table' 
         AND name IN ('tire_measurements', 'frame_images')
       `).all();
+      
+      console.log('Found tables:', tables);
       return NextResponse.json({ tables });
     }
 
-    // Get measurements with their associated frames
+    // Regular GET - fetch measurements
     const measurements = db.prepare(`
-      SELECT 
-        t.*,
-        GROUP_CONCAT(f.frame_url) as frame_urls
-      FROM tire_measurements t
-      LEFT JOIN frame_images f ON t.id = f.tire_measurement_id
-      GROUP BY t.id
-      ORDER BY t.timestamp DESC
+      SELECT * FROM tire_measurements 
+      ORDER BY timestamp DESC 
+      LIMIT 5
     `).all();
 
     return NextResponse.json({
       status: 'success',
       data: measurements
     });
+
   } catch (error) {
     console.error('GET error:', error);
     return NextResponse.json(
-      { message: error instanceof Error ? error.message : 'Failed to fetch measurements' },
+      { message: error instanceof Error ? error.message : 'Failed to fetch data' },
       { status: 500 }
     );
   }

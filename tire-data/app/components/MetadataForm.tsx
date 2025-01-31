@@ -2,7 +2,9 @@
 
 import { useState, FormEvent, useEffect } from 'react';
 import type { TireMetadata, ExtractedFrame } from '../types/types';
-import { tireBrands, tireModels } from '../data/tyreData';
+import { tireBrands, tireModels, type TireBrand } from '../data/tyreData';
+import { TireSizeSection } from './tire-form/TireSize';
+import { TireMeasurementsSection } from './tire-form/TireMeasurements';
 
 interface MetadataFormProps {
   frames?: ExtractedFrame[];
@@ -12,34 +14,37 @@ interface MetadataFormProps {
 export default function MetadataForm({ frames, videoUrl }: MetadataFormProps) {
   console.log('MetadataForm initialized with videoUrl:', videoUrl);
 
-  const [formData, setFormData] = useState<Partial<TireMetadata>>(() => {
-    console.log('Initializing form data with videoUrl:', videoUrl);
-    return {
-      position: undefined,
-      leftRegionDepth: 0,
-      centerRegionDepth: 0,
-      rightRegionDepth: 0,
-      brand: '',
+  const [formData, setFormData] = useState<TireMetadata>({
+    position: '',
+    leftRegionDepth: null,
+    centerRegionDepth: null,
+    rightRegionDepth: null,
+    brand: '',
+    model: '',
+    customBrand: '',
+    customModel: '',
+    // Flat tire size fields
+    width: 0,
+    aspectRatio: 0,
+    diameter: 0,
+    construction: 'R',
+    loadIndex: '',
+    speedRating: '',
+    vehicle: {
+      make: '',
       model: '',
-      size: '',
-      loadIndex: '',
-      speedRating: '',
-      vehicle: {
-        make: '',
-        model: '',
-        year: new Date().getFullYear(),
-      },
-      weather: {
-        condition: 'Dry',
-        temperature: 20,
-      },
-      tireCleanliness: 'Clean',
-      damageType: 'none',
-      measurementDevice: '',
-      timestamp: new Date(),
-      lightingCondition: 'Good',
-      originalVideoUrl: videoUrl || '',
-    };
+      year: new Date().getFullYear(),
+    },
+    weather: {
+      condition: 'Dry',
+      temperature: 20,
+    },
+    tireCleanliness: 'Clean',
+    damageType: 'none',
+    measurementDevice: '',
+    timestamp: new Date(),
+    lightingCondition: 'Good',
+    originalVideoUrl: videoUrl || '',
   });
 
   // Update form data when videoUrl changes
@@ -104,7 +109,6 @@ export default function MetadataForm({ frames, videoUrl }: MetadataFormProps) {
       });
 
       const data = await response.json();
-      console.log('Response from server:', data); // Debug log
       
       if (!response.ok) {
         throw new Error(data.message || 'Failed to save measurement');
@@ -112,6 +116,9 @@ export default function MetadataForm({ frames, videoUrl }: MetadataFormProps) {
 
       console.log('Success response:', data);
       alert('Measurement saved successfully!');
+      
+      // Force page reload after successful save
+      window.location.reload();
       
     } catch (error) {
       console.error('Submit error:', error);
@@ -147,6 +154,13 @@ export default function MetadataForm({ frames, videoUrl }: MetadataFormProps) {
     }
   };
 
+  const updateFormField = (field: string, value: any) => {
+    setFormData(prev => ({
+      ...prev,
+      [field]: value
+    }));
+  };
+
   return (
     <form onSubmit={handleSubmit} className="space-y-6 max-w-2xl mx-auto p-4">
       <button
@@ -158,88 +172,52 @@ export default function MetadataForm({ frames, videoUrl }: MetadataFormProps) {
       </button>
 
       {/* Tire Position */}
-      <div className="space-y-2">
+      <div>
         <label className="block text-sm font-medium text-gray-700">
           Tire Position
         </label>
         <select
           value={formData.position}
-          onChange={(e) => setFormData({ ...formData, position: e.target.value as any })}
+          onChange={(e) => setFormData({ ...formData, position: e.target.value })}
           className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+          required
         >
           <option value="">Select position</option>
           <option value="FL">Front Left</option>
           <option value="FR">Front Right</option>
           <option value="RL">Rear Left</option>
           <option value="RR">Rear Right</option>
+          <option value="SP">Spare</option>
         </select>
       </div>
 
-      {/* Measurements */}
-      <div className="grid grid-cols-3 gap-4">
-        <div>
-          <label className="block text-sm font-medium text-gray-700">
-            Left Depth (mm)
-          </label>
-          <input
-            type="number"
-            step="0.1"
-            value={formData.leftRegionDepth}
-            onChange={(e) => setFormData({ ...formData, leftRegionDepth: parseFloat(e.target.value) })}
-            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                document.getElementById('center-depth')?.focus();
-              }
-            }}
-          />
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700">
-            Center Depth (mm)
-          </label>
-          <input
-            id="center-depth"
-            type="number"
-            step="0.1"
-            value={formData.centerRegionDepth}
-            onChange={(e) => setFormData({ ...formData, centerRegionDepth: parseFloat(e.target.value) })}
-            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                document.getElementById('right-depth')?.focus();
-              }
-            }}
-          />
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700">
-            Right Depth (mm)
-          </label>
-          <input
-            id="right-depth"
-            type="number"
-            step="0.1"
-            value={formData.rightRegionDepth}
-            onChange={(e) => setFormData({ ...formData, rightRegionDepth: parseFloat(e.target.value) })}
-            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-          />
-        </div>
-      </div>
+      <TireMeasurementsSection
+        leftDepth={formData.leftRegionDepth}
+        centerDepth={formData.centerRegionDepth}
+        rightDepth={formData.rightRegionDepth}
+        onChange={updateFormField}
+      />
+
+      <TireSizeSection
+        width={formData.width}
+        aspectRatio={formData.aspectRatio}
+        diameter={formData.diameter}
+        construction={formData.construction}
+        onChange={updateFormField}
+      />
 
       {/* Tire Details */}
       <div className="grid grid-cols-3 gap-4">
         <div>
           <label className="block text-sm font-medium text-gray-700">Brand</label>
           <select
-            value={formData.brand === 'other' ? 'other' : formData.brand}
+            value={formData.brand}
             onChange={(e) => setFormData({ 
               ...formData, 
               brand: e.target.value,
-              customBrand: e.target.value === 'other' ? '' : undefined 
+              customBrand: e.target.value === 'other' ? '' : formData.customBrand 
             })}
             className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-            autoFocus
           >
             <option value="">Select brand</option>
             {tireBrands.map(brand => (
@@ -247,96 +225,49 @@ export default function MetadataForm({ frames, videoUrl }: MetadataFormProps) {
             ))}
             <option value="other">Other</option>
           </select>
-          <input
-            type="text"
-            placeholder="Enter custom brand name"
-            value={formData.customBrand || ''}
-            onChange={(e) => {
-              if (formData.brand === 'other') {
-                setFormData({ 
-                  ...formData, 
-                  customBrand: e.target.value,
-                  brand: 'other'  // Keep 'other' selected in dropdown
-                });
-              }
-            }}
-            disabled={formData.brand !== 'other' && formData.brand !== ''}
-            className={`mt-2 block w-full rounded-md border-gray-300 shadow-sm 
-              ${formData.brand !== 'other' && formData.brand !== '' 
-                ? 'bg-gray-100 text-gray-500' 
-                : 'focus:border-blue-500 focus:ring-blue-500'}`}
-          />
+          {formData.brand === 'other' && (
+            <input
+              type="text"
+              value={formData.customBrand || ''}
+              onChange={(e) => setFormData({ 
+                ...formData, 
+                customBrand: e.target.value 
+              })}
+              className="mt-2 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+              placeholder="Enter custom brand"
+            />
+          )}
         </div>
         <div>
           <label className="block text-sm font-medium text-gray-700">Model</label>
           <select
-            value={formData.model === 'other' ? 'other' : formData.model}
+            value={formData.model}
             onChange={(e) => setFormData({ 
               ...formData, 
               model: e.target.value,
-              customModel: e.target.value === 'other' ? '' : undefined
+              customModel: e.target.value === 'other' ? '' : formData.customModel 
             })}
             className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
             disabled={!formData.brand || formData.brand === 'other'}
           >
             <option value="">Select model</option>
-            {formData.brand && formData.brand !== 'other' && tireModels[formData.brand as keyof typeof tireModels]?.map((model) => (
-              <option key={model} value={model}>
-                {model}
-              </option>
+            {formData.brand && formData.brand !== 'other' && tireModels[formData.brand as TireBrand]?.map(model => (
+              <option key={model} value={model}>{model}</option>
             ))}
             <option value="other">Other</option>
           </select>
-          <input
-            type="text"
-            value={formData.customModel || ''}
-            onChange={(e) => {
-              if (formData.model === 'other' || formData.brand === 'other') {
-                setFormData({ 
-                  ...formData, 
-                  customModel: e.target.value,
-                  model: formData.model === 'other' ? 'other' : e.target.value
-                });
-              }
-            }}
-            className={`mt-2 block w-full rounded-md border-gray-300 shadow-sm 
-              ${(formData.model !== 'other' && formData.model !== '' && formData.brand !== 'other') 
-                ? 'bg-gray-100 text-gray-500' 
-                : 'focus:border-blue-500 focus:ring-blue-500'}`}
-            placeholder="Enter custom model name"
-            disabled={formData.model !== 'other' && formData.model !== '' && formData.brand !== 'other'}
-          />
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700">Size</label>
-          <input
-            id="tire-size"
-            type="text"
-            value={formData.size}
-            onChange={(e) => {
-              // Remove any non-numeric and non-R characters
-              let value = e.target.value.replace(/[^0-9R]/g, '');
-              
-              // Add first '/' after the first 3 digits
-              if (value.length >= 3) {
-                value = value.slice(0, 3) + '/' + value.slice(3);
-              }
-              
-              // Add second '/' after the next 2 digits
-              if (value.length >= 6) {
-                value = value.slice(0, 6) + '/' + value.slice(6);
-              }
-              
-              // Add 'R' after the next 2 digits if not already present
-              if (value.length >= 9 && !value.includes('R')) {
-                value = value.slice(0, 9) + 'R' + value.slice(9);
-              }
-              
-              setFormData({ ...formData, size: value });
-            }}
-            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-            placeholder="225/45/R17"
-          />
+          {(formData.model === 'other' || formData.brand === 'other') && (
+            <input
+              type="text"
+              value={formData.customModel || ''}
+              onChange={(e) => setFormData({ 
+                ...formData, 
+                customModel: e.target.value 
+              })}
+              className="mt-2 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+              placeholder="Enter custom model"
+            />
+          )}
         </div>
         <div>
           <label className="block text-sm font-medium text-gray-700">Load & Speed</label>

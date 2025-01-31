@@ -1,53 +1,23 @@
-export const tireModels = {
-    Michelin: [
-      'CrossClimate+',
-      'Pilot Sport 4',
-      'Primacy 4',
-    ],
-    Continental: [
-      'PremiumContact 6',
-      'EcoContact 6',
-      'WinterContact',
-    ],
-    Bridgestone: [
-      'Turanza T005',
-      'Weather Control A005',
-    ],
-    Goodyear: [
-      'EfficientGrip Performance 2',
-      'Eagle F1 Asymmetric',
-    ],
-    Pirelli: [
-      'P Zero',
-      'Cinturato P7',
-    ],
-    Dunlop: [
-      'Sport BluResponse',
-    ],
-    Hankook: [
-      'Ventus V12 Evo2',
-    ],
-    Yokohama: [
-      'BluEarth',
-    ],
-  };
-  
-  export const tireBrands = [
-    'BF Goodrich',
-    'Dunlop',
-    'Falken',
-    'Firestone',
-    'Kumho',
-    'Nexen',
-    'Uniroyal',
-    'Bridgestone',
-    'Continental',
-    'Goodyear',
-    'Hankook',
-    'Michelin',
-    'Nokian',
-    'Pirelli',
-    'Toyo',
-    'Vredestein',
-    'Yokohama',
-  ].sort();  // Keep brands alphabetically sorted
+export const tireBrands = [
+  'Michelin',
+  'Continental',
+  'Bridgestone',
+  'Goodyear',
+  'Pirelli',
+  'Dunlop',
+  'Hankook',
+  'Yokohama'
+] as const;
+
+export type TireBrand = typeof tireBrands[number];
+
+export const tireModels: Record<TireBrand, string[]> = {
+  'Michelin': ['Pilot Sport 4S', 'Pilot Sport Cup 2', 'Primacy 4'],
+  'Continental': ['SportContact 7', 'EcoContact 6', 'PremiumContact 6'],
+  'Bridgestone': ['Potenza Sport', 'Turanza T005', 'Weather Control A005'],
+  'Goodyear': ['Eagle F1', 'Efficient Grip', 'Vector 4Seasons'],
+  'Pirelli': ['P Zero', 'Cinturato P7', 'Scorpion Verde'],
+  'Dunlop': ['Sport Maxx RT2', 'SP Sport Maxx', 'SP Winter Sport'],
+  'Hankook': ['Ventus S1 Evo3', 'Kinergy Eco2', 'Winter i*cept'],
+  'Yokohama': ['Advan Sport V105', 'BluEarth-GT', 'Geolandar']
+};
