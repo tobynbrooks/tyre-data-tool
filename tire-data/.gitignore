@@ -1,23 +1,37 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
-# Database files
-*.db
-tyre-data.db
-tire-data.db
-
 # Dependencies
-/node_modules
-/.pnp
+node_modules/
+.pnp
 .pnp.js
-.yarn/*
-!.yarn/patches
-!.yarn/plugins
-!.yarn/releases
-!.yarn/versions
+
+# Testing
+coverage/
 
 # Next.js
-/.next/
-/out/
+.next/
+out/
+build/
+dist/
+
+# Uploads directory only
+public/uploads/
+
+# System files
+.DS_Store
+*.pem
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Vercel
+.vercel
+
+# TypeScript
+*.tsbuildinfo
 next-env.d.ts
 
 # Production
@@ -33,8 +47,6 @@ yarn-error.log*
 .env*
 
 # System Files
-.DS_Store
-*.pem
 ../.DS_Store
 ../node_modules/
 ../package-lock.json
