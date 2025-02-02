@@ -4,7 +4,7 @@ import { useState, useRef } from 'react';
 import type { ExtractedFrame } from '../types/types';
 
 interface VideoUploaderProps {
-  onFramesExtracted: (frames: ExtractedFrame[], videoUrl: string) => void;
+  onFramesExtracted: (frames: ExtractedFrame[], videoUrl: string, measurementDevice?: string) => void;
 }
 
 interface FrameExtractionConfig {
@@ -139,44 +139,47 @@ export default function VideoUploader({ onFramesExtracted }: VideoUploaderProps)
     if (!file) return;
 
     try {
+      setLoading(true);
+      setError('');
       const formData = new FormData();
       formData.append('video', file);
 
-      console.log('Uploading video:', file.name);
+      console.log('Starting video upload:', file.name);
 
       const uploadResponse = await fetch('/api/upload', {
         method: 'POST',
         body: formData,
       });
 
+      console.log('Upload response status:', uploadResponse.status);
       const responseData = await uploadResponse.json();
-      console.log('Upload response:', responseData);
+      console.log('Upload response data:', responseData);
 
-      if (!uploadResponse.ok || !responseData.videoUrl) {
-        throw new Error('Failed to upload video or get URL');
+      if (!uploadResponse.ok) {
+        throw new Error(`Upload failed: ${responseData.error || 'Unknown error'}`);
       }
 
       const permanentUrl = responseData.videoUrl;
-      console.log('Setting permanent URL:', permanentUrl);
+      const measurementDevice = responseData.measurementDevice;
+      console.log('Upload successful:', { permanentUrl, measurementDevice });
 
       setVideo(file);
       setVideoPreview(URL.createObjectURL(file));
       setPermanentVideoUrl(permanentUrl);
 
       // Extract frames immediately after upload
+      console.log('Starting frame extraction');
       const extractedFrames = await extractFramesFromVideo(file);
+      console.log('Frames extracted:', extractedFrames.length);
       setFrames(extractedFrames);
       
-      // Pass both frames and permanent URL to parent
-      console.log('Passing to parent - frames and URL:', {
-        framesCount: extractedFrames.length,
-        videoUrl: permanentUrl
-      });
-      onFramesExtracted(extractedFrames, permanentUrl);
+      onFramesExtracted(extractedFrames, permanentUrl, measurementDevice);
 
     } catch (error) {
       console.error('Upload error:', error);
-      setError('Failed to upload video');
+      setError(error instanceof Error ? error.message : 'Failed to upload video');
+    } finally {
+      setLoading(false);
     }
   };
 

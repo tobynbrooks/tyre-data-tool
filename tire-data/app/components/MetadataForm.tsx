@@ -9,12 +9,17 @@ import { TireMeasurementsSection } from './tire-form/TireMeasurements';
 interface MetadataFormProps {
   frames?: ExtractedFrame[];
   videoUrl?: string;
+  measurementDevice?: string;
 }
 
-export default function MetadataForm({ frames, videoUrl }: MetadataFormProps) {
-  console.log('MetadataForm initialized with videoUrl:', videoUrl);
-
-  const [formData, setFormData] = useState<TireMetadata>({
+export default function MetadataForm({ 
+  frames: initialFrames, 
+  videoUrl: initialVideoUrl,
+  measurementDevice: initialDevice 
+}: MetadataFormProps) {
+  const [frames] = useState<ExtractedFrame[]>(initialFrames || []);
+  
+  const [formData, setFormData] = useState<TireMetadata>(() => ({
     position: '',
     leftRegionDepth: null,
     centerRegionDepth: null,
@@ -23,7 +28,6 @@ export default function MetadataForm({ frames, videoUrl }: MetadataFormProps) {
     model: '',
     customBrand: '',
     customModel: '',
-    // Flat tire size fields
     width: 0,
     aspectRatio: 0,
     diameter: 0,
@@ -41,32 +45,38 @@ export default function MetadataForm({ frames, videoUrl }: MetadataFormProps) {
     },
     tireCleanliness: 'Clean',
     damageType: 'none',
-    measurementDevice: '',
+    measurementDevice: initialDevice || '',
     timestamp: new Date(),
     lightingCondition: 'Good',
-    originalVideoUrl: videoUrl || '',
-  });
+    originalVideoUrl: initialVideoUrl || '',
+  }));
 
-  // Update form data when videoUrl changes
+  // Add this new useEffect to handle measurementDevice updates
   useEffect(() => {
-    console.log('videoUrl changed in MetadataForm:', videoUrl);
-    if (videoUrl) {
-      setFormData(prev => {
-        console.log('Updating formData with new videoUrl:', videoUrl);
-        return {
-          ...prev,
-          originalVideoUrl: videoUrl
-        };
-      });
+    if (initialDevice && initialDevice !== formData.measurementDevice) {
+      setFormData(prev => ({
+        ...prev,
+        measurementDevice: initialDevice
+      }));
     }
-  }, [videoUrl]);
+  }, [initialDevice, formData.measurementDevice]);
+
+  // Existing videoUrl useEffect
+  useEffect(() => {
+    if (initialVideoUrl && initialVideoUrl !== formData.originalVideoUrl) {
+      setFormData(prev => ({
+        ...prev,
+        originalVideoUrl: initialVideoUrl
+      }));
+    }
+  }, [initialVideoUrl, formData.originalVideoUrl]);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     
     console.log('Submitting form with data:', {
       ...formData,
-      videoUrl,
+      videoUrl: initialVideoUrl,
       originalVideoUrl: formData.originalVideoUrl,
     });
 
@@ -95,7 +105,7 @@ export default function MetadataForm({ frames, videoUrl }: MetadataFormProps) {
         brand: formData.brand === 'other' ? formData.customBrand : formData.brand,
         // Use custom model if 'other' is selected
         model: formData.model === 'other' ? formData.customModel : formData.model,
-        originalVideoUrl: videoUrl || formData.originalVideoUrl,
+        originalVideoUrl: initialVideoUrl || formData.originalVideoUrl,
       };
 
       console.log('Final submission data:', submissionData);
@@ -158,6 +168,24 @@ export default function MetadataForm({ frames, videoUrl }: MetadataFormProps) {
     setFormData(prev => ({
       ...prev,
       [field]: value
+    }));
+  };
+
+  const handleFramesExtracted = (
+    extractedFrames: ExtractedFrame[], 
+    videoUrl: string, 
+    measurementDevice?: string
+  ) => {
+    console.log('Received frames and device:', { 
+      framesCount: extractedFrames.length, 
+      videoUrl, 
+      measurementDevice 
+    });
+    
+    setFormData(prev => ({
+      ...prev,
+      measurementDevice: measurementDevice || '',
+      originalVideoUrl: videoUrl
     }));
   };
 

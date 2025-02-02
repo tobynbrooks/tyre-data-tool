@@ -7,14 +7,17 @@ import type { ExtractedFrame } from './types/types';
 export default function Home() {
   const [extractedFrames, setExtractedFrames] = useState<ExtractedFrame[]>([]);
   const [videoUrl, setVideoUrl] = useState<string>('');
+  const [measurementDevice, setMeasurementDevice] = useState<string>('');
 
-  const handleFramesExtracted = (frames: ExtractedFrame[], url: string) => {
-    console.log('Home received frames and URL:', {
+  const handleFramesExtracted = (frames: ExtractedFrame[], url: string, device?: string) => {
+    console.log('Home received:', {
       framesCount: frames.length,
-      videoUrl: url
+      videoUrl: url,
+      measurementDevice: device
     });
     setExtractedFrames(frames);
     setVideoUrl(url);
+    setMeasurementDevice(device || '');
   };
 
   return (
@@ -47,7 +50,11 @@ export default function Home() {
           </div>
         </div>
 
-        <MetadataForm frames={extractedFrames} videoUrl={videoUrl} />
+        <MetadataForm 
+          frames={extractedFrames} 
+          videoUrl={videoUrl} 
+          measurementDevice={measurementDevice}
+        />
 
         {/* Footer */}
         <footer className="mt-8 text-center text-gray-500 text-sm">
