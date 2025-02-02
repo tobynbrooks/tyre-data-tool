@@ -17,6 +17,7 @@
     "@radix-ui/react-form": "^0.1.1",
     "@radix-ui/react-progress": "^1.1.1",
     "better-sqlite3": "^11.7.2",
+    "cloudinary": "^2.5.1",
     "drizzle-orm": "^0.38.3",
     "exiftool-vendored": "^29.1.0",
     "next": "15.1.4",

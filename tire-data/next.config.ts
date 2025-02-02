@@ -1,6 +1,10 @@
 import type { NextConfig } from 'next'
 
 const nextConfig: NextConfig = {
+  images: {
+    domains: ['res.cloudinary.com'],
+    unoptimized: true,
+  },
   async headers() {
     return [
       {
@@ -8,7 +12,7 @@ const nextConfig: NextConfig = {
         headers: [
           {
             key: 'Cross-Origin-Embedder-Policy',
-            value: 'require-corp',
+            value: 'credentialless',
           },
           {
             key: 'Cross-Origin-Opener-Policy',
@@ -17,6 +21,11 @@ const nextConfig: NextConfig = {
         ],
       },
     ]
+  },
+  experimental: {
+    serverActions: {
+      bodySizeLimit: '10mb'
+    },
   },
 }
 

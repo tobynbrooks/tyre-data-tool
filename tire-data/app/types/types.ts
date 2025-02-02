@@ -42,6 +42,7 @@ export interface ExtractedFrame {
   frameNumber: number;
   blob: Blob;
   url: string;
+  cloudinaryUrl?: string;
 }
 
 export interface Vehicle {

@@ -1,10 +1,12 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useCallback, useMemo } from 'react';
 import type { ExtractedFrame } from '../types/types';
+import { cloudinaryClient } from '../lib/cloudinary/client';
+import Image from 'next/image';
 
 interface VideoUploaderProps {
-  onFramesExtracted: (frames: ExtractedFrame[], videoUrl: string, measurementDevice?: string) => void;
+  onFramesExtracted: (frames: ExtractedFrame[], videoUrl: string, deviceType?: string) => void;
 }
 
 interface FrameExtractionConfig {
@@ -22,6 +24,14 @@ const DEFAULT_CONFIG: FrameExtractionConfig = {
   scaleFactor: 0.5,
   randomize: false
 };
+
+interface UploadResponse {
+  urls: string[];
+}
+
+interface VideoUploadResponse {
+  videoUrl: string;
+}
 
 const extractFramesFromVideo = async (
   file: File,
@@ -97,12 +107,22 @@ const extractFramesFromVideo = async (
             );
           });
 
-          const url = URL.createObjectURL(blob);
+          // Upload frame to Cloudinary
+          const formData = new FormData();
+          formData.append('file', blob);
+          
+          const uploadResponse = await fetch('/api/upload-frame', {
+            method: 'POST',
+            body: formData,
+          });
+
+          const { secure_url } = await uploadResponse.json();
           
           frames.push({
             frameNumber: currentFrame,
             blob,
-            url,
+            url: URL.createObjectURL(blob),
+            cloudinaryUrl: secure_url
           });
 
           currentFrame++;
@@ -127,102 +147,124 @@ const extractFramesFromVideo = async (
 export default function VideoUploader({ onFramesExtracted }: VideoUploaderProps) {
   const [video, setVideo] = useState<File | null>(null);
   const [videoPreview, setVideoPreview] = useState<string>('');
-  const [frames, setFrames] = useState<ExtractedFrame[]>([]);
+  const [localFrames, setLocalFrames] = useState<ExtractedFrame[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>('');
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const [permanentVideoUrl, setPermanentVideoUrl] = useState<string>('');
+  const [uploadProgress, setUploadProgress] = useState(0);
 
-  // Handle video file selection
-  const handleVideoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
+  const processVideo = async (file: File) => {
     try {
       setLoading(true);
       setError('');
-      const formData = new FormData();
-      formData.append('video', file);
 
-      console.log('Starting video upload:', file.name);
+      // Create video preview
+      const videoUrl = URL.createObjectURL(file);
+      setVideoPreview(videoUrl);
+      setVideo(file);
 
-      const uploadResponse = await fetch('/api/upload', {
-        method: 'POST',
-        body: formData,
-      });
+      // Extract frames locally first
+      console.log('Extracting frames...');
+      const extractedFrames = await extractFramesFromVideo(file);
+      
+      // Create local URLs for immediate preview
+      const localPreviewFrames = extractedFrames.map((frame, index) => ({
+        ...frame,
+        frameNumber: index,
+        url: URL.createObjectURL(frame.blob)
+      }));
 
-      console.log('Upload response status:', uploadResponse.status);
-      const responseData = await uploadResponse.json();
-      console.log('Upload response data:', responseData);
+      setLocalFrames(localPreviewFrames);
+      console.log(`Extracted ${localPreviewFrames.length} frames`);
 
-      if (!uploadResponse.ok) {
-        throw new Error(`Upload failed: ${responseData.error || 'Unknown error'}`);
+      // Upload in chunks to avoid size limits
+      const chunkSize = 5; // number of frames per chunk
+      const chunks: FormData[] = [];
+      
+      for (let i = 0; i < extractedFrames.length; i += chunkSize) {
+        const chunk = extractedFrames.slice(i, i + chunkSize);
+        const formData = new FormData();
+        
+        chunk.forEach((frame, index) => {
+          formData.append(`frame${i + index}`, frame.blob);
+        });
+        
+        chunks.push(formData);
       }
 
-      const permanentUrl = responseData.videoUrl;
-      const measurementDevice = responseData.measurementDevice;
-      console.log('Upload successful:', { permanentUrl, measurementDevice });
+      // Upload chunks sequentially
+      const frameUrls: string[] = [];
+      for (let i = 0; i < chunks.length; i++) {
+        const response = await fetch('/api/upload-frame', {
+          method: 'POST',
+          body: chunks[i],
+        });
+        const { urls } = await response.json() as UploadResponse;
+        frameUrls.push(...urls);
+        
+        // Update progress
+        setUploadProgress(Math.round(((i + 1) / chunks.length) * 100));
+      }
 
-      setVideo(file);
-      setVideoPreview(URL.createObjectURL(file));
-      setPermanentVideoUrl(permanentUrl);
+      // Upload video separately
+      const videoFormData = new FormData();
+      videoFormData.append('video', file);
+      const videoResponse = await fetch('/api/upload-video', {
+        method: 'POST',
+        body: videoFormData,
+      });
+      const { videoUrl: cloudinaryVideoUrl } = await videoResponse.json() as VideoUploadResponse;
 
-      // Extract frames immediately after upload
-      console.log('Starting frame extraction');
-      const extractedFrames = await extractFramesFromVideo(file);
-      console.log('Frames extracted:', extractedFrames.length);
-      setFrames(extractedFrames);
-      
-      onFramesExtracted(extractedFrames, permanentUrl, measurementDevice);
+      // Create final frames array
+      const finalFrames = extractedFrames.map((frame, index) => ({
+        ...frame,
+        frameNumber: index,
+        cloudinaryUrl: frameUrls[index],
+        url: localPreviewFrames[index].url
+      }));
+
+      onFramesExtracted(finalFrames, cloudinaryVideoUrl, file.type.split('/')[0]);
+      console.log('Upload complete!');
 
     } catch (error) {
-      console.error('Upload error:', error);
-      setError(error instanceof Error ? error.message : 'Failed to upload video');
+      console.error('Processing error:', error);
+      setError('Failed to process video');
     } finally {
       setLoading(false);
     }
   };
 
-  // Extract frames from video
-  const extractFrames = async () => {
-    if (!video) return;
-    
-    console.log('Starting frame extraction, permanent URL:', permanentVideoUrl); // Debug log
-    setLoading(true);
-    setError('');
-
-    try {
-      const extractedFrames = await extractFramesFromVideo(video);
-      setFrames(extractedFrames);
-      onFramesExtracted(extractedFrames, permanentVideoUrl); // Use the stored permanent URL
-      console.log('Frames extracted, passed URL to parent:', permanentVideoUrl);
-    } catch (error) {
-      console.error('Frame extraction error:', error);
-      setError('Failed to extract frames');
-    } finally {
-      setLoading(false);
-    }
+  const handleVideoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    processVideo(file);
   };
 
-  const renderFrameThumbnails = () => {
-    if (frames.length === 0) return null;
+  const renderFrameThumbnails = useCallback(() => {
+    if (localFrames.length === 0) return null;
 
     return (
       <div className="space-y-4">
-        <h3 className="text-lg font-medium">Extracted Frames</h3>
+        <h3 className="text-lg font-medium">
+          Extracted Frames ({localFrames.length})
+          {loading && uploadProgress > 0 && (
+            <span className="ml-2 text-sm text-gray-500">
+              Uploading: {uploadProgress}%
+            </span>
+          )}
+        </h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
-          {frames.map((frame) => (
+          {localFrames.map((frame) => (
             <div 
-              key={frame.frameNumber} 
-              className="relative aspect-w-16 aspect-h-9 bg-gray-100 rounded-lg overflow-hidden hover:shadow-lg transition-shadow"
+              key={frame.frameNumber}
+              className="relative bg-gray-100 rounded-lg overflow-hidden"
+              style={{ minHeight: '200px' }}
             >
               <img
                 src={frame.url}
                 alt={`Frame ${frame.frameNumber + 1}`}
-                className="w-full h-full object-contain"
-                loading="lazy"
+                className="absolute inset-0 w-full h-full object-cover"
               />
-              <div className="absolute bottom-2 right-2 bg-black bg-opacity-50 text-white px-2 py-1 rounded text-sm">
+              <div className="absolute bottom-0 left-0 right-0 bg-black bg-opacity-50 text-white p-2 text-sm">
                 Frame {frame.frameNumber + 1}
               </div>
             </div>
@@ -230,7 +272,7 @@ export default function VideoUploader({ onFramesExtracted }: VideoUploaderProps)
         </div>
       </div>
     );
-  };
+  }, [localFrames, loading, uploadProgress]);
 
   return (
     <div className="space-y-6">
@@ -247,22 +289,35 @@ export default function VideoUploader({ onFramesExtracted }: VideoUploaderProps)
           htmlFor="video-upload"
           className="flex flex-col items-center cursor-pointer"
         >
-          <svg
-            className="w-12 h-12 text-gray-400"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
-            />
-          </svg>
-          <span className="mt-2 text-base text-gray-600">
-            {video ? 'Change video' : 'Upload video'}
-          </span>
+          {videoPreview ? (
+            <div className="relative w-full max-w-md aspect-video">
+              <video
+                src={videoPreview}
+                className="w-full h-full object-cover rounded-lg"
+                controls
+                muted
+              />
+            </div>
+          ) : (
+            <>
+              <svg
+                className="w-12 h-12 text-gray-400"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
+                />
+              </svg>
+              <span className="mt-2 text-base text-gray-600">
+                Upload video
+              </span>
+            </>
+          )}
         </label>
       </div>
 
@@ -273,38 +328,13 @@ export default function VideoUploader({ onFramesExtracted }: VideoUploaderProps)
         </div>
       )}
 
-      {/* Video Preview */}
-      {videoPreview && (
-        <div className="aspect-w-16 aspect-h-9 bg-black rounded-lg overflow-hidden">
-          <video
-            ref={videoRef}
-            src={videoPreview}
-            controls
-            className="w-full h-full object-contain"
-          />
+      {/* Loading Indicator */}
+      {loading && (
+        <div className="flex items-center justify-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+          <span className="ml-2">Processing video...</span>
         </div>
       )}
-
-      {/* Extract Frames Button */}
-      <button
-        onClick={extractFrames}
-        disabled={!video || loading}
-        className="w-full sm:w-auto px-6 py-3 bg-blue-600 text-white rounded-lg
-                 disabled:bg-gray-300 disabled:cursor-not-allowed
-                 hover:bg-blue-700 transition-colors"
-      >
-        {loading ? (
-          <span className="flex items-center justify-center">
-            <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-            </svg>
-            Processing...
-          </span>
-        ) : (
-          'Extract Frames'
-        )}
-      </button>
 
       {/* Render Frame Thumbnails */}
       {renderFrameThumbnails()}

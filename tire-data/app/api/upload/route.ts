@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server';
-import { writeFile, mkdir } from 'fs/promises';
-import path from 'path';
-import { existsSync } from 'fs';
-import { exiftool, Tags } from 'exiftool-vendored';
+import { cloudinaryClient } from '../../lib/cloudinary/client';
+import { exiftool } from 'exiftool-vendored';
+import { writeFile, unlink } from 'fs/promises';
+import { join } from 'path';
+import { tmpdir } from 'os';
 
 export async function POST(request: Request) {
   try {
@@ -24,52 +25,68 @@ export async function POST(request: Request) {
       type: video.type
     });
 
-    // Create unique filename
-    const timestamp = Date.now();
-    const filename = `video_${timestamp}_${video.name.replace(/[^a-zA-Z0-9.]/g, '_')}`;
-    const uploadDir = path.join(process.cwd(), 'public', 'uploads');
-    
-    console.log('Creating upload directory:', uploadDir);
-    if (!existsSync(uploadDir)) {
-      await mkdir(uploadDir, { recursive: true });
-    }
-    
-    const filePath = path.join(uploadDir, filename);
-    console.log('Writing file to:', filePath);
-
+    // Convert File to buffer
     const bytes = await video.arrayBuffer();
     const buffer = Buffer.from(bytes);
-    await writeFile(filePath, buffer);
 
-    console.log('File written successfully, reading metadata...');
-
-    // Read metadata using ExifTool
+    // Create a temporary file path
+    const tempFilePath = join(tmpdir(), `upload-${Date.now()}.mov`);
+    
     try {
-      const metadata = await exiftool.read(filePath);
-      console.log('Full metadata:', metadata);
+      // Write buffer to temporary file
+      await writeFile(tempFilePath, buffer);
 
-      // Access CameraLensModel using string index notation
-      const deviceInfo = (metadata as any)['CameraLensModel'] || 'Unknown Device';
-
-      console.log('Device info:', deviceInfo);
-
-      return NextResponse.json({ 
-        status: 'success',
-        videoUrl: `/uploads/${filename}`,
-        measurementDevice: deviceInfo,
-        metadata: {
-          cameraLensModel: (metadata as any)['CameraLensModel']
-        }
+      // Upload to Cloudinary
+      const uploadResult = await new Promise((resolve, reject) => {
+        cloudinaryClient.uploader.upload_stream(
+          {
+            resource_type: 'video',
+            folder: 'tire-data/videos/raw',
+            tags: ['tire_measurement', 'raw'],
+          },
+          (error, result) => {
+            if (error) reject(error);
+            else resolve(result);
+          }
+        ).end(buffer);
       });
 
-    } catch (metadataError) {
-      console.error('Metadata extraction error:', metadataError);
-      return NextResponse.json({ 
-        status: 'success',
-        videoUrl: `/uploads/${filename}`,
-        measurementDevice: 'Unknown Device',
-        error: 'Failed to read metadata'
-      });
+      console.log('Cloudinary upload successful:', uploadResult);
+
+      // Read metadata from the temp file
+      try {
+        const metadata = await exiftool.read(tempFilePath);
+        console.log('Full metadata:', metadata);
+
+        const deviceInfo = metadata.CameraModel || 'Unknown Device';
+
+        return NextResponse.json({ 
+          status: 'success',
+          videoUrl: (uploadResult as any).secure_url,
+          measurementDevice: deviceInfo,
+          metadata: {
+            cameraModel: metadata.CameraModel
+          }
+        });
+
+      } catch (metadataError) {
+        console.error('Metadata extraction error:', metadataError);
+        return NextResponse.json({ 
+          status: 'success',
+          videoUrl: (uploadResult as any).secure_url,
+          measurementDevice: 'Unknown Device',
+          error: 'Failed to read metadata'
+        });
+      }
+
+    } finally {
+      // Clean up: Remove temporary file
+      try {
+        await exiftool.end();
+        await unlink(tempFilePath);
+      } catch (cleanupError) {
+        console.error('Cleanup error:', cleanupError);
+      }
     }
 
   } catch (error) {
