@@ -63,6 +63,8 @@ export default function MetadataForm({
 
   // Existing videoUrl useEffect
   useEffect(() => {
+    console.log('initialVideoUrl:', initialVideoUrl);  // Debug log 3
+    console.log('current formData.originalVideoUrl:', formData.originalVideoUrl);  // Debug log 4
     if (initialVideoUrl && initialVideoUrl !== formData.originalVideoUrl) {
       setFormData(prev => ({
         ...prev,
@@ -171,7 +173,7 @@ export default function MetadataForm({
     }));
   };
 
-  const handleFramesExtracted = (
+  const FramesExtracted = (
     extractedFrames: ExtractedFrame[], 
     videoUrl: string, 
     measurementDevice?: string
