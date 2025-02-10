@@ -17,8 +17,10 @@ export default function MetadataForm({
   videoUrl: initialVideoUrl,
   measurementDevice: initialDevice 
 }: MetadataFormProps) {
-  const [frames] = useState<ExtractedFrame[]>(initialFrames || []);
+  console.log('🖼️ DEBUG: MetadataForm received frames:', initialFrames);
   
+  const [frames, setFrames] = useState<ExtractedFrame[]>(initialFrames || []);
+
   const [formData, setFormData] = useState<TireMetadata>(() => ({
     position: '',
     leftRegionDepth: null,
@@ -73,13 +75,28 @@ export default function MetadataForm({
     }
   }, [initialVideoUrl, formData.originalVideoUrl]);
 
+  // Add useEffect to update frames when they change
+  useEffect(() => {
+    if (initialFrames?.length) {
+      console.log('🔄 DEBUG: Updating frames state:', initialFrames);
+      setFrames(initialFrames);
+    }
+  }, [initialFrames]);
+
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     
-    console.log('Submitting form with data:', {
-      ...formData,
-      videoUrl: initialVideoUrl,
-      originalVideoUrl: formData.originalVideoUrl,
+    // Debug log 1: Initial frames check
+    console.log('🎯 DEBUG Step 1: Initial frames:', frames);
+    
+    // Debug log 2: Form data check
+    console.log('📝 DEBUG Step 2: Form Data before submission:', {
+      position: formData.position,
+      leftDepth: formData.leftRegionDepth,
+      centerDepth: formData.centerRegionDepth,
+      rightDepth: formData.rightRegionDepth,
+      brand: formData.brand,
+      frames: frames  // Make sure frames are included
     });
 
     // Validate required fields before submission
@@ -99,10 +116,12 @@ export default function MetadataForm({
     });
 
     try {
-      // Prepare submission data with custom brand/model handling
+      // Prepare submission data
       const submissionData = {
         ...formData,
-        frames,
+        frames: frames.map(frame => ({
+          url: frame.url
+        })),
         // Use custom brand if 'other' is selected
         brand: formData.brand === 'other' ? formData.customBrand : formData.brand,
         // Use custom model if 'other' is selected
@@ -110,7 +129,8 @@ export default function MetadataForm({
         originalVideoUrl: initialVideoUrl || formData.originalVideoUrl,
       };
 
-      console.log('Final submission data:', submissionData);
+      // Debug log 3: Final submission data
+      console.log('📦 DEBUG Step 3: Final submission data:', submissionData);
 
       const response = await fetch('/api/measurements', {
         method: 'POST',

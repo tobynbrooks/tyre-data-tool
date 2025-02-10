@@ -124,6 +124,36 @@ const extractFramesFromVideo = async (
   });
 };
 
+// Add this function to handle frame uploads
+const uploadFramesToCloudinary = async (frames: ExtractedFrame[]) => {
+  const formData = new FormData();
+  
+  // Add each frame's blob to formData
+  frames.forEach((frame, index) => {
+    formData.append(`frame${index}`, frame.blob, `frame${index}.jpg`);
+  });
+
+  console.log('🖼️ DEBUG: Uploading frames to Cloudinary:', frames.length);
+  
+  const response = await fetch('/api/upload-frame', {
+    method: 'POST',
+    body: formData
+  });
+
+  if (!response.ok) {
+    throw new Error('Failed to upload frames');
+  }
+
+  const { urls } = await response.json();
+  console.log('🖼️ DEBUG: Cloudinary Frame URLs received:', urls);
+  
+  // Return frames with Cloudinary URLs
+  return frames.map((frame, index) => ({
+    ...frame,
+    url: urls[index]
+  }));
+};
+
 export default function VideoUploader({ onFramesExtracted }: VideoUploaderProps) {
   const [video, setVideo] = useState<File | null>(null);
   const [videoPreview, setVideoPreview] = useState<string>('');
@@ -139,10 +169,10 @@ export default function VideoUploader({ onFramesExtracted }: VideoUploaderProps)
     if (!file) return;
 
     try {
+      // First upload video to Cloudinary
       const formData = new FormData();
       formData.append('video', file);
-
-      console.log('Uploading video:', file.name);
+      console.log('�� Uploading video:', file.name);
 
       const uploadResponse = await fetch('/api/upload-video', {
         method: 'POST',
@@ -150,7 +180,7 @@ export default function VideoUploader({ onFramesExtracted }: VideoUploaderProps)
       });
 
       const responseData = await uploadResponse.json();
-      console.log('Upload response:', responseData);
+      console.log('🎥 Upload response:', responseData);
 
       if (!uploadResponse.ok || !responseData.videoUrl) {
         throw new Error('Failed to upload video or get URL');
@@ -158,49 +188,24 @@ export default function VideoUploader({ onFramesExtracted }: VideoUploaderProps)
 
       const permanentUrl = responseData.videoUrl;
       const measurementDevice = responseData.measurementDevice;
-      console.log('Setting permanent URL:', permanentUrl);
-      console.log('Measurement device:', measurementDevice);
-
+      
       setVideo(file);
       setVideoPreview(URL.createObjectURL(file));
       setPermanentVideoUrl(permanentUrl);
 
-      // Extract frames immediately after upload
+      // Now extract and upload frames
+      console.log('🖼️ Extracting frames...');
       const extractedFrames = await extractFramesFromVideo(file);
-      setFrames(extractedFrames);
+      console.log('🖼️ Uploading frames to Cloudinary...');
+      const framesWithUrls = await uploadFramesToCloudinary(extractedFrames);
+      setFrames(framesWithUrls);
       
-      // Pass frames, URL, and measurement device to parent
-      console.log('Passing to parent:', {
-        framesCount: extractedFrames.length,
-        videoUrl: permanentUrl,
-        measurementDevice
-      });
-      onFramesExtracted(extractedFrames, permanentUrl, measurementDevice);
+      // Pass everything to parent
+      onFramesExtracted(framesWithUrls, permanentUrl, measurementDevice);
 
     } catch (error) {
       console.error('Upload error:', error);
       setError('Failed to upload video');
-    }
-  };
-
-  // Extract frames from video
-  const extractFrames = async () => {
-    if (!video) return;
-    
-    console.log('Starting frame extraction, permanent URL:', permanentVideoUrl); // Debug log
-    setLoading(true);
-    setError('');
-
-    try {
-      const extractedFrames = await extractFramesFromVideo(video);
-      setFrames(extractedFrames);
-      onFramesExtracted(extractedFrames, permanentVideoUrl); // Use the stored permanent URL
-      console.log('Frames extracted, passed URL to parent:', permanentVideoUrl);
-    } catch (error) {
-      console.error('Frame extraction error:', error);
-      setError('Failed to extract frames');
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -284,27 +289,6 @@ export default function VideoUploader({ onFramesExtracted }: VideoUploaderProps)
           />
         </div>
       )}
-
-      {/* Extract Frames Button */}
-      <button
-        onClick={extractFrames}
-        disabled={!video || loading}
-        className="w-full sm:w-auto px-6 py-3 bg-blue-600 text-white rounded-lg
-                 disabled:bg-gray-300 disabled:cursor-not-allowed
-                 hover:bg-blue-700 transition-colors"
-      >
-        {loading ? (
-          <span className="flex items-center justify-center">
-            <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-            </svg>
-            Processing...
-          </span>
-        ) : (
-          'Extract Frames'
-        )}
-      </button>
 
       {/* Render Frame Thumbnails */}
       {renderFrameThumbnails()}

@@ -10,6 +10,7 @@ export default function Home() {
   const [measurementDevice, setMeasurementDevice] = useState<string>('');
 
   const handleFramesExtracted = (frames: ExtractedFrame[], url: string, device?: string) => {
+    console.log('🎯 DEBUG: Full frames data:', frames);
     console.log('Home received:', {
       framesCount: frames.length,
       videoUrl: url,
