@@ -62,6 +62,7 @@ export async function POST(request: Request) {
 
         return NextResponse.json({ 
           status: 'success',
+           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           videoUrl: (uploadResult as any).secure_url,
           measurementDevice: deviceInfo,
           metadata: {
@@ -73,6 +74,7 @@ export async function POST(request: Request) {
         console.error('Metadata extraction error:', metadataError);
         return NextResponse.json({ 
           status: 'success',
+           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           videoUrl: (uploadResult as any).secure_url,
           measurementDevice: 'Unknown Device',
           error: 'Failed to read metadata'

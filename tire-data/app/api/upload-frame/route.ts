@@ -15,6 +15,7 @@ export async function POST(request: Request) {
     const uploadPromises: Promise<UploadApiResponse>[] = [];
 
     // Process each frame in the formData
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     for (const [key, value] of formData.entries()) {
       if (value instanceof Blob) {
         // Convert Blob to Buffer

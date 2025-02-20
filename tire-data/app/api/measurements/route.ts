@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import db from '../../db';
-import type { ExtractedFrame } from '../../types/types';
+
 
 export async function POST(request: Request) {
   try {
