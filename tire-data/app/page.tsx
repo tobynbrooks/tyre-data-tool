@@ -59,7 +59,7 @@ export default function Home() {
 
         {/* Footer */}
         <footer className="mt-8 text-center text-gray-500 text-sm">
-          <p>Supported format: MP4, MOV, AVI</p>
+          <p>Supported formats: MP4, MOV, AVI</p>
           <p>Maximum file size: 100MB</p>
         </footer>
       </div>
