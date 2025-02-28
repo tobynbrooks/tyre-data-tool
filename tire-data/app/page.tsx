@@ -46,7 +46,7 @@ export default function Home() {
         {/* Video Uploader Component */}
         <div className="bg-white rounded-lg shadow">
           <div className="p-6">
-            <h2 className="text-lg font-semibold mb-4">Upload Tire Video</h2>
+            <h2 className="text-lg font-semibold mb-4 !text-black">Upload Tire Video</h2>
             <VideoUploader onFramesExtracted={handleFramesExtracted} />
           </div>
         </div>

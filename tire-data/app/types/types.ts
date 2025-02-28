@@ -12,19 +12,15 @@ export interface TireMetadata {
   rightRegionDepth: number | null;
   brand: string;
   model: string;
-  customBrand?: string;
-  customModel?: string;
+  customBrand: string;
+  customModel: string;
   width: number;
   aspectRatio: number;
   diameter: number;
   construction: 'R' | 'B' | 'D';
   loadIndex: string;
   speedRating: string;
-  vehicle: {
-    make: string;
-    model: string;
-    year: number;
-  };
+  vehicle: Vehicle;
   weather: {
     condition: string;
     temperature: number;
@@ -49,6 +45,7 @@ export interface Vehicle {
   make: string;
   model: string;
   year: number;
+  otherMake?: string;
 }
 
 export interface Weather {

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { v2 as cloudinary } from 'cloudinary';
 import { UploadApiResponse } from 'cloudinary';
-import { exiftool, Tags } from 'exiftool-vendored';
+import { exiftool } from 'exiftool-vendored';
 import { writeFile, unlink } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
@@ -40,6 +40,7 @@ export async function POST(request: Request) {
     console.log('Video metadata:', metadata);
 
     // Get device info from CameraLensModel field
+     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const deviceInfo = (metadata as any).CameraLensModel || 'Unknown Device';
 
     // Upload buffer to Cloudinary
@@ -64,6 +65,7 @@ export async function POST(request: Request) {
       videoUrl: result.secure_url,
       measurementDevice: deviceInfo,
       metadata: {
+         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         cameraLensModel: (metadata as any).CameraLensModel,
       }
     });
