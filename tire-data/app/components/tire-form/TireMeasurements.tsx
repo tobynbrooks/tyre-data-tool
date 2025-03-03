@@ -23,7 +23,7 @@ export function TireMeasurementsSection({ leftDepth, centerDepth, rightDepth, on
       </div>
       <div>
         <label className="block text-sm font-medium text-gray-700">
-          Center Depth (mm)
+          Center (mm)
         </label>
         <input
           type="number"

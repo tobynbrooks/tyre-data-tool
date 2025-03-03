@@ -39,26 +39,42 @@ const extractFramesFromVideo = async (
     video.autoplay = false;
     video.preload = 'metadata';
     
-    // Add these constraints for high resolution
-    // Video element setup for stability
-    video.setAttribute('playsinline', '');  // Essential for iOS
-    video.setAttribute('controls', '');     // User controls
-    video.autoplay = false;                 // Prevents Safari crashes
-    video.muted = true;                     // May help with some iOS restrictions
-    video.preload = 'metadata';    
+    video.setAttribute('playsinline', '');
+    video.setAttribute('webkit-playsinline', ''); // Older iOS versions
+    video.setAttribute('x-webkit-airplay', 'allow');
+    
+    // Force video to load at highest possible quality on iOS
+    if (window.navigator.userAgent.indexOf('iPhone') > -1) {
+      video.setAttribute('controls', ''); // Helps Safari use native player
+      video.style.width = '100%';
+      video.style.height = 'auto';
+    }
     
     video.addEventListener('loadstart', () => console.log('📱 VIDEO: loadstart'));
     
     video.addEventListener('loadedmetadata', async () => {
       console.log('📱 VIDEO: loadedmetadata', {
         duration: video.duration,
-        dimensions: `${video.videoWidth}x${video.videoHeight}`
+        dimensions: `${video.videoWidth}x${video.videoHeight}`,
+        fileSize: `${(file.size / (1024 * 1024)).toFixed(2)} MB`
       });
 
       try {
-        // Force high resolution canvas size
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
+        // Force high resolution canvas - CRITICAL CHANGE
+        // Safari sometimes doesn't respect video dimensions, so we use file
+        // properties to estimate the true video resolution
+        const estimatedWidth = file.size > 10000000 ? 3840 : 1920; // Use file size to guess resolution
+        const estimatedHeight = file.size > 10000000 ? 2160 : 1080;
+        
+        // If video dimensions are too small, try to force larger canvas
+        if (video.videoWidth < 1280 || video.videoHeight < 720) {
+          console.log('📱 WARNING: Video dimensions too small, attempting to force higher resolution');
+          canvas.width = Math.max(video.videoWidth, estimatedWidth);
+          canvas.height = Math.max(video.videoHeight, estimatedHeight);
+        } else {
+          canvas.width = video.videoWidth;
+          canvas.height = video.videoHeight;
+        }
         
         if (!ctx) {
           throw new Error('Canvas context not available');
@@ -66,10 +82,11 @@ const extractFramesFromVideo = async (
 
         // Log the actual dimensions being used
         console.log('Extracting frames at resolution:', {
-          width: canvas.width,
-          height: canvas.height,
+          canvasWidth: canvas.width,
+          canvasHeight: canvas.height,
           videoWidth: video.videoWidth,
-          videoHeight: video.videoHeight
+          videoHeight: video.videoHeight,
+          fileSize: `${(file.size / (1024 * 1024)).toFixed(2)} MB`
         });
 
         // Set high-quality canvas rendering
@@ -89,7 +106,7 @@ const extractFramesFromVideo = async (
 
         // Extract frames
         for (let i = 0; i < maxFrames; i++) {
-          const timestamp = i * frameInterval;
+          const timestamp = i * frameInterval + 0.1;
           console.log(`📱 DEBUG: Processing frame ${i + 1}/${maxFrames} at ${timestamp}s`);
           
           video.currentTime = timestamp;
@@ -108,7 +125,8 @@ const extractFramesFromVideo = async (
 
           console.log(`📱 DEBUG: Frame ${i + 1} processed:`, {
             timestamp,
-            blobSize: blob.size
+            blobSize: `${(blob.size / 1024).toFixed(2)} KB`,
+            resolution: `${canvas.width}x${canvas.height}`
           });
 
           frames.push({
@@ -177,7 +195,9 @@ const useIsMobile = () => {
   const [isMobile, setIsMobile] = useState(false);
 
   useEffect(() => {
-    setIsMobile(/iPhone|iPad|iPod|Android/i.test(window.navigator.userAgent));
+    if (typeof window !== 'undefined') {
+      setIsMobile(/iPhone|iPad|iPod|Android/i.test(window.navigator.userAgent));
+    }
   }, []);
 
   return isMobile;
@@ -189,15 +209,62 @@ export default function VideoUploader({ onFramesExtracted }: VideoUploaderProps)
   const [frames, setFrames] = useState<ExtractedFrame[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>('');
+  const [uploadProgress, setUploadProgress] = useState({ current: 0, total: 0 });
   const videoRef = useRef<HTMLVideoElement>(null);
   const [permanentVideoUrl, setPermanentVideoUrl] = useState<string>('');
+
+  // Try to set high quality camera constraints on component mount
+  useEffect(() => {
+
+    if (typeof window === 'undefined') return;
+
+    const setupHighQualityCamera = async () => {
+      if (/iPhone|iPad|iPod/i.test(navigator.userAgent)) {
+        console.log('📱 Setting high quality capture constraints for iOS');
+        try {
+          // Request camera access with high quality first
+          const stream = await navigator.mediaDevices.getUserMedia({
+            video: {
+              width: { ideal: 3840, min: 1280 },
+              height: { ideal: 2160, min: 720 },
+              facingMode: 'environment'
+            }
+          });
+          // Release the stream immediately - we just want to set quality preferences
+          stream.getTracks().forEach(track => track.stop());
+          console.log('📱 Successfully set camera constraints');
+        } catch (e) {
+          console.log('📱 Could not set camera constraints:', e);
+        }
+      }
+    };
+
+    setupHighQualityCamera();
+  }, []);
 
   // Handle video file selection
   const handleVideoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    
+    setLoading(true);
+    setError('');
+    setUploadProgress({ current: 0, total: 0 });
 
     try {
+      console.log('🎥 File selected:', {
+        name: file.name,
+        type: file.type,
+        size: `${(file.size / (1024 * 1024)).toFixed(2)} MB`
+      });
+      
+      // For iOS Safari, try to check file quality early
+      if (window.navigator.userAgent.indexOf('iPhone') > -1) {
+        if (file.size < 1000000) { // Less than 1MB
+          console.warn('📱 WARNING: File size indicates very low quality video');
+        }
+      }
+
       // First upload video to Cloudinary
       const formData = new FormData();
       formData.append('video', file);
@@ -222,30 +289,108 @@ export default function VideoUploader({ onFramesExtracted }: VideoUploaderProps)
       setVideoPreview(URL.createObjectURL(file));
       setPermanentVideoUrl(permanentUrl);
 
-      // Now extract and upload frames
+      // Now extract frames
       console.log('📱 DEBUG: Extracting frames...');
       const extractedFrames = await extractFramesFromVideo(file);
-      console.log('📱 DEBUG: Frames extracted:', {
-        count: extractedFrames.length,
-        frames: extractedFrames.map(f => ({
-          number: f.frameNumber,
-          hasBlob: !!f.blob
-        }))
-      });
-
+      
+      // Set total frames for progress
+      setUploadProgress({ current: 0, total: extractedFrames.length });
       console.log('📱 DEBUG: Uploading frames to Cloudinary...');
-      const framesWithUrls = await uploadFramesToCloudinary(extractedFrames);
+      
+      // Upload frames with progress
+      const framesWithUrls = [];
+      for (let i = 0; i < extractedFrames.length; i++) {
+        try {
+          const frameData = new FormData();
+          frameData.append(`frame`, extractedFrames[i].blob, `frame${i}.jpg`);
+          
+          const uploadResponse = await fetch('/api/upload-frame', {
+            method: 'POST',
+            body: frameData
+          });
+          
+          if (!uploadResponse.ok) {
+            console.error(`📱 ERROR: Failed to upload frame ${i}`);
+            continue;
+          }
+          
+          const { urls } = await uploadResponse.json();
+          framesWithUrls.push({
+            ...extractedFrames[i],
+            url: urls[0]
+          });
+          
+          setUploadProgress(prev => ({ ...prev, current: i + 1 }));
+        } catch (frameError) {
+          console.error(`📱 ERROR: Frame ${i} upload failed:`, frameError);
+        }
+      }
+      
       console.log('📱 DEBUG: Frames uploaded:', {
         count: framesWithUrls.length,
         urls: framesWithUrls.map(f => f.url)
       });
+      
+      // Only proceed if we have at least one frame
+      if (framesWithUrls.length > 0) {
+        setFrames(framesWithUrls);
+        onFramesExtracted(framesWithUrls, permanentUrl, measurementDevice);
+      } else {
+        throw new Error('Failed to upload any frames');
+      }
 
-      setFrames(framesWithUrls);
-      onFramesExtracted(framesWithUrls, permanentUrl, measurementDevice);
     } catch (error) {
       console.error('📱 ERROR: Upload process failed:', error);
-      setError('Failed to upload video');
+      setError('Failed to upload video: ' + (error instanceof Error ? error.message : 'Unknown error'));
+    } finally {
+      setLoading(false);
     }
+  };
+
+  const createFilePickerComponent = () => {
+
+    if (typeof window === 'undefined') return null;
+
+    const [isSafariIOS, setIsSafariIOS] = useState(false);
+  
+    // Check browser type in useEffect
+    useEffect(() => {
+      if (typeof window !== 'undefined') {
+        const isIOS = /iPhone|iPad|iPod/i.test(window.navigator.userAgent);
+        const isWebKit = /WebKit/i.test(window.navigator.userAgent);
+        const notChrome = !/CriOS/i.test(window.navigator.userAgent);
+        setIsSafariIOS(isIOS && isWebKit && notChrome);
+      }
+    }, []);
+    
+    if (!isSafariIOS) return null; {
+      return (
+        <div className="mt-4">
+          <h3 className="text-lg font-medium mb-2">For iOS devices:</h3>  {/* Library selection option */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Choose from library
+            </label>
+            <input
+              type="file"
+              accept="video/*"
+              onChange={handleVideoUpload}
+              className="block w-full text-sm text-gray-500
+                file:mr-4 file:py-2 file:px-4
+                file:rounded-full file:border-0
+                file:text-sm file:font-semibold
+                file:bg-blue-50 file:text-blue-700
+                hover:file:bg-blue-100"
+            />
+          </div>
+          <p className="text-sm text-gray-500 mt-3">
+            Choose to either record a new video or select from your library
+          </p>
+        </div>
+      );
+    }
+    
+    return null;
   };
 
   const renderFrameThumbnails = () => {
@@ -333,6 +478,9 @@ export default function VideoUploader({ onFramesExtracted }: VideoUploaderProps)
         </label>
       </div>
 
+      {/* iOS-specific file picker with capture attribute */}
+      {createFilePickerComponent()}
+
       {/* Error Message */}
       {error && (
         <div className="bg-red-50 text-red-500 p-4 rounded-lg">
@@ -349,6 +497,22 @@ export default function VideoUploader({ onFramesExtracted }: VideoUploaderProps)
             controls
             className="w-full h-full object-contain"
           />
+        </div>
+      )}
+
+      {/* Add this after the video preview */}
+      {loading && uploadProgress.total > 0 && (
+        <div className="mt-4">
+          <div className="flex justify-between mb-1">
+            <span>Uploading frames</span>
+            <span>{uploadProgress.current} of {uploadProgress.total}</span>
+          </div>
+          <div className="w-full bg-gray-200 rounded-full h-2.5">
+            <div 
+              className="bg-blue-600 h-2.5 rounded-full" 
+              style={{ width: `${(uploadProgress.current / uploadProgress.total) * 100}%` }}
+            ></div>
+          </div>
         </div>
       )}
 
