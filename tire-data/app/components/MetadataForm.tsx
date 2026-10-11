@@ -1,26 +1,20 @@
 'use client';
 
 import { useState, FormEvent, useEffect } from 'react';
-import type { TireMetadata, ExtractedFrame } from '../types/types';
+import type { TireMetadata } from '../types/types';
 import { tireBrands, tireModels, speedRatings, type TireBrand, type SpeedRating, vehicleMakes } from '../data/tyreData';
 import { TireSizeSection } from './tire-form/TireSize';
 import { TireMeasurementsSection } from './tire-form/TireMeasurements';
 
 interface MetadataFormProps {
-  frames?: ExtractedFrame[];
   videoUrl?: string;
   measurementDevice?: string;
 }
 
 export default function MetadataForm({ 
-  frames: initialFrames, 
   videoUrl: initialVideoUrl,
   measurementDevice: initialDevice 
 }: MetadataFormProps) {
-  console.log('🖼️ DEBUG: MetadataForm received frames:', initialFrames);
-  
-  const [frames, setFrames] = useState<ExtractedFrame[]>(initialFrames || []);
-
   const [formData, setFormData] = useState<TireMetadata>(() => ({
     position: '',
     leftRegionDepth: null,
@@ -76,14 +70,6 @@ export default function MetadataForm({
     }
   }, [initialVideoUrl, formData.originalVideoUrl]);
 
-  // Add useEffect to update frames when they change
-  useEffect(() => {
-    if (initialFrames?.length) {
-      console.log('🔄 DEBUG: Updating frames state:', initialFrames);
-      setFrames(initialFrames);
-    }
-  }, [initialFrames]);
-
   // Add this near the top of your component, before the return statement
   useEffect(() => {
     // Load saved model from localStorage when component mounts
@@ -101,19 +87,6 @@ export default function MetadataForm({
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    
-    // Debug log 1: Initial frames check
-    console.log('🎯 DEBUG Step 1: Initial frames:', frames);
-    
-    // Debug log 2: Form data check
-    console.log('📝 DEBUG Step 2: Form Data before submission:', {
-      position: formData.position,
-      leftDepth: formData.leftRegionDepth,
-      centerDepth: formData.centerRegionDepth,
-      rightDepth: formData.rightRegionDepth,
-      brand: formData.brand,
-      frames: frames  // Make sure frames are included
-    });
 
     // Validate required fields before submission
     if (!formData.position) {
@@ -127,17 +100,13 @@ export default function MetadataForm({
       leftDepth: formData.leftRegionDepth,
       centerDepth: formData.centerRegionDepth,
       rightDepth: formData.rightRegionDepth,
-      brand: formData.brand,
-      frames: frames
+      brand: formData.brand
     });
 
     try {
       // Prepare submission data
       const submissionData = {
         ...formData,
-        frames: frames.map(frame => ({
-          url: frame.url
-        })),
         // Use custom brand if 'other' is selected
         brand: formData.brand === 'other' ? formData.customBrand : formData.brand,
         // Use custom model if 'other' is selected
@@ -206,24 +175,6 @@ export default function MetadataForm({
     setFormData(prev => ({
       ...prev,
       [field]: value
-    }));
-  };
-
-  const FramesExtracted = (
-    extractedFrames: ExtractedFrame[], 
-    videoUrl: string, 
-    measurementDevice?: string
-  ) => {
-    console.log('Received frames and device:', { 
-      framesCount: extractedFrames.length, 
-      videoUrl, 
-      measurementDevice 
-    });
-    
-    setFormData(prev => ({
-      ...prev,
-      measurementDevice: measurementDevice || '',
-      originalVideoUrl: videoUrl
     }));
   };
 
