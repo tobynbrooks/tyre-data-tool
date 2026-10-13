@@ -2,20 +2,16 @@
 import VideoUploader from './components/VideoUploader';
 import MetadataForm from './components/MetadataForm';
 import { useState } from 'react';
-import type { ExtractedFrame } from './types/types';
 
 export default function Home() {
-  const [extractedFrames, setExtractedFrames] = useState<ExtractedFrame[]>([]);
   const [videoUrl, setVideoUrl] = useState<string>('');
   const [measurementDevice, setMeasurementDevice] = useState<string>('');
 
-  const handleFramesExtracted = (frames: ExtractedFrame[], url: string, device?: string) => {
+  const handleVideoUploaded = (url: string, device?: string) => {
     console.log('Home received:', {
-      framesCount: frames.length,
       videoUrl: url,
       measurementDevice: device
     });
-    setExtractedFrames(frames);
     setVideoUrl(url);
     setMeasurementDevice(device || '');
   };
@@ -36,8 +32,7 @@ export default function Home() {
           <h2 className="text-lg font-semibold mb-2">How to use:</h2>
           <ol className="list-decimal list-inside space-y-2 text-gray-600">
             <li>Upload a video of your tire (MP4 format recommended)</li>
-            <li>Wait for the frames to be extracted</li>
-            <li>Review the extracted frames</li>
+            <li>Wait for the video to finish uploading</li>
             <li>Add metadata and submit for analysis</li>
           </ol>
         </div>
@@ -45,13 +40,12 @@ export default function Home() {
         {/* Video Uploader Component */}
         <div className="bg-white rounded-lg shadow">
           <div className="p-6">
-            <h2 className="text-lg font-semibold mb-4">Upload Tire Video</h2>
-            <VideoUploader onFramesExtracted={handleFramesExtracted} />
+            <h2 className="text-lg font-semibold mb-4 !text-black">Upload Tire Video</h2>
+            <VideoUploader onVideoUploaded={handleVideoUploaded} />
           </div>
         </div>
 
         <MetadataForm 
-          frames={extractedFrames} 
           videoUrl={videoUrl} 
           measurementDevice={measurementDevice}
         />
