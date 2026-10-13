@@ -1,17 +1,28 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
+import { readCameraModel } from '../lib/readCameraModel';
 
 interface VideoUploaderProps {
   onVideoUploaded: (videoUrl: string, measurementDevice?: string) => void;
 }
+
+const MAX_FILE_SIZE = 100_000_000;
 
 export default function VideoUploader({ onVideoUploaded }: VideoUploaderProps) {
   const [video, setVideo] = useState<File | null>(null);
   const [videoPreview, setVideoPreview] = useState<string>('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>('');
+  const [isSafariIOS, setIsSafariIOS] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
+
+  useEffect(() => {
+    const isIOS = /iPhone|iPad|iPod/i.test(window.navigator.userAgent);
+    const isWebKit = /WebKit/i.test(window.navigator.userAgent);
+    const notChrome = !/CriOS/i.test(window.navigator.userAgent);
+    setIsSafariIOS(isIOS && isWebKit && notChrome);
+  }, []);
 
   // Try to set high quality camera constraints on component mount
   useEffect(() => {
@@ -64,25 +75,44 @@ export default function VideoUploader({ onVideoUploaded }: VideoUploaderProps) {
         }
       }
 
+      if (file.size > MAX_FILE_SIZE) {
+        throw new Error('Video is larger than 100MB');
+      }
+
+      const devicePromise = readCameraModel(file);
+
+      const signResponse = await fetch('/api/sign-upload', { method: 'POST' });
+      if (!signResponse.ok) {
+        throw new Error('Failed to get upload signature');
+      }
+      const { cloudName, apiKey, signature, params } = await signResponse.json();
+
       const formData = new FormData();
-      formData.append('video', file);
+      formData.append('file', file);
+      formData.append('api_key', apiKey);
+      formData.append('signature', signature);
+      for (const [key, value] of Object.entries(params)) {
+        formData.append(key, value as string);
+      }
       console.log('🎥 Uploading video:', file.name);
 
-      const uploadResponse = await fetch('/api/upload-video', {
-        method: 'POST',
-        body: formData,
-      });
+      const uploadResponse = await fetch(
+        `https://api.cloudinary.com/v1_1/${cloudName}/video/upload`,
+        { method: 'POST', body: formData }
+      );
 
       const responseData = await uploadResponse.json();
       console.log('🎥 Upload response:', responseData);
 
-      if (!uploadResponse.ok || !responseData.videoUrl) {
-        throw new Error('Failed to upload video or get URL');
+      if (!uploadResponse.ok || !responseData.secure_url) {
+        throw new Error(responseData.error?.message || 'Failed to upload video or get URL');
       }
 
       setVideo(file);
       setVideoPreview(URL.createObjectURL(file));
-      onVideoUploaded(responseData.videoUrl, responseData.measurementDevice);
+      const measurementDevice = (await devicePromise) ?? 'Unknown Device';
+      console.log('🎥 Measurement device:', measurementDevice);
+      onVideoUploaded(responseData.secure_url, measurementDevice);
 
     } catch (error) {
       console.error('📱 ERROR: Upload process failed:', error);
@@ -93,21 +123,6 @@ export default function VideoUploader({ onVideoUploaded }: VideoUploaderProps) {
   };
 
   const createFilePickerComponent = () => {
-
-    if (typeof window === 'undefined') return null;
-
-    const [isSafariIOS, setIsSafariIOS] = useState(false);
-  
-    // Check browser type in useEffect
-    useEffect(() => {
-      if (typeof window !== 'undefined') {
-        const isIOS = /iPhone|iPad|iPod/i.test(window.navigator.userAgent);
-        const isWebKit = /WebKit/i.test(window.navigator.userAgent);
-        const notChrome = !/CriOS/i.test(window.navigator.userAgent);
-        setIsSafariIOS(isIOS && isWebKit && notChrome);
-      }
-    }, []);
-    
     if (!isSafariIOS) return null; {
       return (
         <div className="mt-4">
