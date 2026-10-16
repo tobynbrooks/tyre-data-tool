@@ -20,6 +20,9 @@ export default function MetadataForm({
     leftRegionDepth: null,
     centerRegionDepth: null,
     rightRegionDepth: null,
+    secondLeftRegionDepth: null,
+    secondCenterRegionDepth: null,
+    secondRightRegionDepth: null,
     brand: '',
     model: '',
     customBrand: '',
@@ -100,6 +103,9 @@ export default function MetadataForm({
       leftDepth: formData.leftRegionDepth,
       centerDepth: formData.centerRegionDepth,
       rightDepth: formData.rightRegionDepth,
+      secondLeftDepth: formData.secondLeftRegionDepth,
+      secondCenterDepth: formData.secondCenterRegionDepth,
+      secondRightDepth: formData.secondRightRegionDepth,
       brand: formData.brand
     });
 
@@ -212,6 +218,9 @@ export default function MetadataForm({
         leftDepth={formData.leftRegionDepth}
         centerDepth={formData.centerRegionDepth}
         rightDepth={formData.rightRegionDepth}
+        secondLeftDepth={formData.secondLeftRegionDepth}
+        secondCenterDepth={formData.secondCenterRegionDepth}
+        secondRightDepth={formData.secondRightRegionDepth}
         onChange={updateFormField}
       />
 
