@@ -1,240 +1,156 @@
 'use client';
 
-import { useState, useRef } from 'react';
-import type { ExtractedFrame } from '../types/types';
+import { useState, useRef, useEffect } from 'react';
+import { readCameraModel } from '../lib/readCameraModel';
 
 interface VideoUploaderProps {
-  onFramesExtracted: (frames: ExtractedFrame[], videoUrl: string, measurementDevice?: string) => void;
+  onVideoUploaded: (videoUrl: string, measurementDevice?: string) => void;
 }
 
-interface FrameExtractionConfig {
-  maxFrames: number;
-  framesPerSecond: number;
-  quality: number;
-  scaleFactor: number;
-  randomize: boolean;
-}
+const MAX_FILE_SIZE = 100_000_000;
 
-const DEFAULT_CONFIG: FrameExtractionConfig = {
-  maxFrames: 5,
-  framesPerSecond: 1,
-  quality: 0.8,
-  scaleFactor: 0.5,
-  randomize: false
-};
-
-const extractFramesFromVideo = async (
-  file: File,
-  config: FrameExtractionConfig = DEFAULT_CONFIG
-): Promise<ExtractedFrame[]> => {
-  return new Promise((resolve, reject) => {
-    const video = document.createElement('video');
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
-    const frames: ExtractedFrame[] = [];
-    
-    video.playsInline = true;
-    video.muted = true;
-    video.autoplay = false;
-    
-    const videoUrl = URL.createObjectURL(file);
-    video.src = videoUrl;
-    
-    video.onloadeddata = () => {
-      console.log('Video loaded:', {
-        duration: video.duration,
-        dimensions: `${video.videoWidth}x${video.videoHeight}`
-      });
-
-      canvas.width = video.videoWidth * config.scaleFactor;
-      canvas.height = video.videoHeight * config.scaleFactor;
-      
-      if (!ctx) {
-        URL.revokeObjectURL(videoUrl);
-        reject(new Error('Canvas context not available'));
-        return;
-      }
-
-      const frameInterval = 1 / config.framesPerSecond;
-      const totalPossibleFrames = Math.floor(video.duration / frameInterval);
-      const maxFrames = Math.min(config.maxFrames, totalPossibleFrames);
-
-      let timestamps = Array.from(
-        { length: totalPossibleFrames },
-        (_, i) => i * frameInterval
-      );
-
-      if (config.randomize) {
-        timestamps = timestamps.sort(() => Math.random() - 0.5);
-      }
-      timestamps = timestamps.slice(0, maxFrames).sort((a, b) => a - b);
-
-      let currentFrame = 0;
-
-      const processNextFrame = () => {
-        if (currentFrame >= timestamps.length) {
-          URL.revokeObjectURL(videoUrl);
-          resolve(frames);
-          return;
-        }
-
-        video.currentTime = timestamps[currentFrame];
-      };
-
-      video.onseeked = async () => {
-        try {
-          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-          
-          // Convert canvas to blob
-          const blob = await new Promise<Blob>((resolve, reject) => {
-            canvas.toBlob(
-              (blob) => {
-                if (blob) resolve(blob);
-                else reject(new Error('Failed to create blob'));
-              },
-              'image/jpeg',
-              config.quality
-            );
-          });
-
-          const url = URL.createObjectURL(blob);
-          
-          frames.push({
-            frameNumber: currentFrame,
-            blob,
-            url,
-          });
-
-          currentFrame++;
-          processNextFrame();
-        } catch (error) {
-          console.error('Frame capture error:', error);
-          currentFrame++;
-          processNextFrame();
-        }
-      };
-
-      processNextFrame();
-    };
-
-    video.onerror = () => {
-      URL.revokeObjectURL(videoUrl);
-      reject(new Error('Error loading video'));
-    };
-  });
-};
-
-// Add this function to handle frame uploads
-const uploadFramesToCloudinary = async (frames: ExtractedFrame[]) => {
-  const formData = new FormData();
-  
-  // Add each frame's blob to formData
-  frames.forEach((frame, index) => {
-    formData.append(`frame${index}`, frame.blob, `frame${index}.jpg`);
-  });
-
-  console.log('🖼️ DEBUG: Uploading frames to Cloudinary:', frames.length);
-  
-  const response = await fetch('/api/upload-frame', {
-    method: 'POST',
-    body: formData
-  });
-
-  if (!response.ok) {
-    throw new Error('Failed to upload frames');
-  }
-
-  const { urls } = await response.json();
-  console.log('🖼️ DEBUG: Cloudinary Frame URLs received:', urls);
-  
-  // Return frames with Cloudinary URLs
-  return frames.map((frame, index) => ({
-    ...frame,
-    url: urls[index]
-  }));
-};
-
-export default function VideoUploader({ onFramesExtracted }: VideoUploaderProps) {
+export default function VideoUploader({ onVideoUploaded }: VideoUploaderProps) {
   const [video, setVideo] = useState<File | null>(null);
   const [videoPreview, setVideoPreview] = useState<string>('');
-  const [frames, setFrames] = useState<ExtractedFrame[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>('');
+  const [isSafariIOS, setIsSafariIOS] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
-  const [permanentVideoUrl, setPermanentVideoUrl] = useState<string>('');
+
+  useEffect(() => {
+    const isIOS = /iPhone|iPad|iPod/i.test(window.navigator.userAgent);
+    const isWebKit = /WebKit/i.test(window.navigator.userAgent);
+    const notChrome = !/CriOS/i.test(window.navigator.userAgent);
+    setIsSafariIOS(isIOS && isWebKit && notChrome);
+  }, []);
+
+  // Try to set high quality camera constraints on component mount
+  useEffect(() => {
+
+    if (typeof window === 'undefined') return;
+
+    const setupHighQualityCamera = async () => {
+      if (/iPhone|iPad|iPod/i.test(navigator.userAgent)) {
+        console.log('📱 Setting high quality capture constraints for iOS');
+        try {
+          // Request camera access with high quality first
+          const stream = await navigator.mediaDevices.getUserMedia({
+            video: {
+              width: { ideal: 3840, min: 1280 },
+              height: { ideal: 2160, min: 720 },
+              facingMode: 'environment'
+            }
+          });
+          // Release the stream immediately - we just want to set quality preferences
+          stream.getTracks().forEach(track => track.stop());
+          console.log('📱 Successfully set camera constraints');
+        } catch (e) {
+          console.log('📱 Could not set camera constraints:', e);
+        }
+      }
+    };
+
+    setupHighQualityCamera();
+  }, []);
 
   // Handle video file selection
   const handleVideoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    
+    setLoading(true);
+    setError('');
 
     try {
-      // First upload video to Cloudinary
-      const formData = new FormData();
-      formData.append('video', file);
-      console.log('�� Uploading video:', file.name);
-
-      const uploadResponse = await fetch('/api/upload-video', {
-        method: 'POST',
-        body: formData,
+      console.log('🎥 File selected:', {
+        name: file.name,
+        type: file.type,
+        size: `${(file.size / (1024 * 1024)).toFixed(2)} MB`
       });
+      
+      // For iOS Safari, try to check file quality early
+      if (window.navigator.userAgent.indexOf('iPhone') > -1) {
+        if (file.size < 1000000) { // Less than 1MB
+          console.warn('📱 WARNING: File size indicates very low quality video');
+        }
+      }
+
+      if (file.size > MAX_FILE_SIZE) {
+        throw new Error('Video is larger than 100MB');
+      }
+
+      const devicePromise = readCameraModel(file);
+
+      const signResponse = await fetch('/api/sign-upload', { method: 'POST' });
+      if (!signResponse.ok) {
+        throw new Error('Failed to get upload signature');
+      }
+      const { cloudName, apiKey, signature, params } = await signResponse.json();
+
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('api_key', apiKey);
+      formData.append('signature', signature);
+      for (const [key, value] of Object.entries(params)) {
+        formData.append(key, value as string);
+      }
+      console.log('🎥 Uploading video:', file.name);
+
+      const uploadResponse = await fetch(
+        `https://api.cloudinary.com/v1_1/${cloudName}/video/upload`,
+        { method: 'POST', body: formData }
+      );
 
       const responseData = await uploadResponse.json();
       console.log('🎥 Upload response:', responseData);
 
-      if (!uploadResponse.ok || !responseData.videoUrl) {
-        throw new Error('Failed to upload video or get URL');
+      if (!uploadResponse.ok || !responseData.secure_url) {
+        throw new Error(responseData.error?.message || 'Failed to upload video or get URL');
       }
 
-      const permanentUrl = responseData.videoUrl;
-      const measurementDevice = responseData.measurementDevice;
-      
       setVideo(file);
       setVideoPreview(URL.createObjectURL(file));
-      setPermanentVideoUrl(permanentUrl);
-
-      // Now extract and upload frames
-      console.log('🖼️ Extracting frames...');
-      const extractedFrames = await extractFramesFromVideo(file);
-      console.log('🖼️ Uploading frames to Cloudinary...');
-      const framesWithUrls = await uploadFramesToCloudinary(extractedFrames);
-      setFrames(framesWithUrls);
-      
-      // Pass everything to parent
-      onFramesExtracted(framesWithUrls, permanentUrl, measurementDevice);
+      const measurementDevice = (await devicePromise) ?? 'Unknown Device';
+      console.log('🎥 Measurement device:', measurementDevice);
+      onVideoUploaded(responseData.secure_url, measurementDevice);
 
     } catch (error) {
-      console.error('Upload error:', error);
-      setError('Failed to upload video');
+      console.error('📱 ERROR: Upload process failed:', error);
+      setError('Failed to upload video: ' + (error instanceof Error ? error.message : 'Unknown error'));
+    } finally {
+      setLoading(false);
     }
   };
 
-  const renderFrameThumbnails = () => {
-    if (frames.length === 0) return null;
-
-    return (
-      <div className="space-y-4">
-        <h3 className="text-lg font-medium">Extracted Frames</h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
-          {frames.map((frame) => (
-            <div 
-              key={frame.frameNumber} 
-              className="relative aspect-w-16 aspect-h-9 bg-gray-100 rounded-lg overflow-hidden hover:shadow-lg transition-shadow"
-            >
-              <img
-                src={frame.url}
-                alt={`Frame ${frame.frameNumber + 1}`}
-                className="w-full h-full object-contain"
-                loading="lazy"
-              />
-              <div className="absolute bottom-2 right-2 bg-black bg-opacity-50 text-white px-2 py-1 rounded text-sm">
-                Frame {frame.frameNumber + 1}
-              </div>
-            </div>
-          ))}
+  const createFilePickerComponent = () => {
+    if (!isSafariIOS) return null; {
+      return (
+        <div className="mt-4">
+          <h3 className="text-lg font-medium mb-2">For iOS devices:</h3>  {/* Library selection option */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Choose from library
+            </label>
+            <input
+              type="file"
+              accept="video/*"
+              onChange={handleVideoUpload}
+              className="block w-full text-sm text-gray-500
+                file:mr-4 file:py-2 file:px-4
+                file:rounded-full file:border-0
+                file:text-sm file:font-semibold
+                file:bg-blue-50 file:text-blue-700
+                hover:file:bg-blue-100"
+            />
+          </div>
+          <p className="text-sm text-gray-500 mt-3">
+            Choose to either record a new video or select from your library
+          </p>
         </div>
-      </div>
-    );
+      );
+    }
+    
+    return null;
   };
 
   return (
@@ -271,6 +187,16 @@ export default function VideoUploader({ onFramesExtracted }: VideoUploaderProps)
         </label>
       </div>
 
+      {/* iOS-specific file picker with capture attribute */}
+      {createFilePickerComponent()}
+
+      {/* Upload Status */}
+      {loading && (
+        <div className="bg-blue-50 text-blue-700 p-4 rounded-lg">
+          Uploading video...
+        </div>
+      )}
+
       {/* Error Message */}
       {error && (
         <div className="bg-red-50 text-red-500 p-4 rounded-lg">
@@ -289,9 +215,6 @@ export default function VideoUploader({ onFramesExtracted }: VideoUploaderProps)
           />
         </div>
       )}
-
-      {/* Render Frame Thumbnails */}
-      {renderFrameThumbnails()}
     </div>
   );
 }

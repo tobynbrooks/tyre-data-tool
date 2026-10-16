@@ -1,31 +1,28 @@
 'use client';
 
 import { useState, FormEvent, useEffect } from 'react';
-import type { TireMetadata, ExtractedFrame } from '../types/types';
-import { tireBrands, tireModels, type TireBrand } from '../data/tyreData';
+import type { TireMetadata } from '../types/types';
+import { tireBrands, tireModels, speedRatings, type TireBrand, type SpeedRating, vehicleMakes } from '../data/tyreData';
 import { TireSizeSection } from './tire-form/TireSize';
 import { TireMeasurementsSection } from './tire-form/TireMeasurements';
 
 interface MetadataFormProps {
-  frames?: ExtractedFrame[];
   videoUrl?: string;
   measurementDevice?: string;
 }
 
 export default function MetadataForm({ 
-  frames: initialFrames, 
   videoUrl: initialVideoUrl,
   measurementDevice: initialDevice 
 }: MetadataFormProps) {
-  console.log('🖼️ DEBUG: MetadataForm received frames:', initialFrames);
-  
-  const [frames, setFrames] = useState<ExtractedFrame[]>(initialFrames || []);
-
   const [formData, setFormData] = useState<TireMetadata>(() => ({
     position: '',
     leftRegionDepth: null,
     centerRegionDepth: null,
     rightRegionDepth: null,
+    secondLeftRegionDepth: null,
+    secondCenterRegionDepth: null,
+    secondRightRegionDepth: null,
     brand: '',
     model: '',
     customBrand: '',
@@ -40,6 +37,7 @@ export default function MetadataForm({
       make: '',
       model: '',
       year: new Date().getFullYear(),
+      otherMake: '',
     },
     weather: {
       condition: 'Dry',
@@ -75,29 +73,23 @@ export default function MetadataForm({
     }
   }, [initialVideoUrl, formData.originalVideoUrl]);
 
-  // Add useEffect to update frames when they change
+  // Add this near the top of your component, before the return statement
   useEffect(() => {
-    if (initialFrames?.length) {
-      console.log('🔄 DEBUG: Updating frames state:', initialFrames);
-      setFrames(initialFrames);
+    // Load saved model from localStorage when component mounts
+    const savedModel = localStorage.getItem('lastVehicleModel');
+    if (savedModel) {
+      setFormData(prev => ({
+        ...prev,
+        vehicle: {
+          ...prev.vehicle!,
+          model: savedModel
+        }
+      }));
     }
-  }, [initialFrames]);
+  }, []); // Empty dependency array means this runs once when component mounts
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    
-    // Debug log 1: Initial frames check
-    console.log('🎯 DEBUG Step 1: Initial frames:', frames);
-    
-    // Debug log 2: Form data check
-    console.log('📝 DEBUG Step 2: Form Data before submission:', {
-      position: formData.position,
-      leftDepth: formData.leftRegionDepth,
-      centerDepth: formData.centerRegionDepth,
-      rightDepth: formData.rightRegionDepth,
-      brand: formData.brand,
-      frames: frames  // Make sure frames are included
-    });
 
     // Validate required fields before submission
     if (!formData.position) {
@@ -111,17 +103,16 @@ export default function MetadataForm({
       leftDepth: formData.leftRegionDepth,
       centerDepth: formData.centerRegionDepth,
       rightDepth: formData.rightRegionDepth,
-      brand: formData.brand,
-      frames: frames
+      secondLeftDepth: formData.secondLeftRegionDepth,
+      secondCenterDepth: formData.secondCenterRegionDepth,
+      secondRightDepth: formData.secondRightRegionDepth,
+      brand: formData.brand
     });
 
     try {
       // Prepare submission data
       const submissionData = {
         ...formData,
-        frames: frames.map(frame => ({
-          url: frame.url
-        })),
         // Use custom brand if 'other' is selected
         brand: formData.brand === 'other' ? formData.customBrand : formData.brand,
         // Use custom model if 'other' is selected
@@ -193,24 +184,6 @@ export default function MetadataForm({
     }));
   };
 
-  const FramesExtracted = (
-    extractedFrames: ExtractedFrame[], 
-    videoUrl: string, 
-    measurementDevice?: string
-  ) => {
-    console.log('Received frames and device:', { 
-      framesCount: extractedFrames.length, 
-      videoUrl, 
-      measurementDevice 
-    });
-    
-    setFormData(prev => ({
-      ...prev,
-      measurementDevice: measurementDevice || '',
-      originalVideoUrl: videoUrl
-    }));
-  };
-
   return (
     <form onSubmit={handleSubmit} className="space-y-6 max-w-2xl mx-auto p-4">
       <button
@@ -245,6 +218,9 @@ export default function MetadataForm({
         leftDepth={formData.leftRegionDepth}
         centerDepth={formData.centerRegionDepth}
         rightDepth={formData.rightRegionDepth}
+        secondLeftDepth={formData.secondLeftRegionDepth}
+        secondCenterDepth={formData.secondCenterRegionDepth}
+        secondRightDepth={formData.secondRightRegionDepth}
         onChange={updateFormField}
       />
 
@@ -323,26 +299,26 @@ export default function MetadataForm({
           <label className="block text-sm font-medium text-gray-700">Load & Speed</label>
           <div className="flex gap-2">
             <input
-              type="text"
+              type="number"
+              inputMode="numeric"
               value={formData.loadIndex}
               onChange={(e) => setFormData({ ...formData, loadIndex: e.target.value })}
               className="mt-1 block w-1/2 rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
               placeholder="91"
+              min="0"
+              max="999"
               maxLength={3}
             />
-            <input
-              type="text"
+            <select
               value={formData.speedRating}
-              onChange={(e) => {
-                const value = e.target.value.toUpperCase();
-                if (value === '' || /^[A-Z]$/.test(value)) {
-                  setFormData({ ...formData, speedRating: value });
-                }
-              }}
+              onChange={(e) => setFormData({ ...formData, speedRating: e.target.value as SpeedRating })}
               className="mt-1 block w-1/2 rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-              placeholder="Y"
-              maxLength={1}
-            />
+            >
+              <option value="">Select</option>
+              {speedRatings.map(rating => (
+                <option key={rating} value={rating}>{rating}</option>
+              ))}
+            </select>
           </div>
           <span className="text-xs text-gray-500 mt-1">Load Index & Speed Rating</span>
         </div>
@@ -351,27 +327,57 @@ export default function MetadataForm({
       {/* Vehicle Info */}
       <div className="grid grid-cols-3 gap-4">
         <div>
-          <label className="block text-sm font-medium text-gray-700">Vehicle Make</label>
-          <input
-            type="text"
-            value={formData.vehicle?.make}
+          <label className="block text-sm font-medium !text-black">Vehicle Make</label>
+          <select
+            value={formData.vehicle?.make === 'other' ? 'other' : formData.vehicle?.make}
             onChange={(e) => setFormData({
               ...formData,
-              vehicle: { ...formData.vehicle!, make: e.target.value }
+              vehicle: { 
+                ...formData.vehicle!, 
+                make: e.target.value 
+              }
             })}
-            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-          />
+            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 !text-black"
+          >
+            <option value="">Select make</option>
+            {vehicleMakes.map((make) => (
+              <option key={make} value={make}>{make}</option>
+            ))}
+            <option value="other">Other</option>
+          </select>
+          {formData.vehicle?.make === 'other' && (
+            <input
+              type="text"
+              value={formData.vehicle.otherMake || ''}
+              onChange={(e) => setFormData({
+                ...formData,
+                vehicle: { 
+                  ...formData.vehicle!, 
+                  otherMake: e.target.value,
+                  make: 'other'
+                }
+              })}
+              className="mt-2 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 !text-black"
+              placeholder="Enter vehicle make"
+            />
+          )}
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-700">Vehicle Model</label>
+          <label className="block text-sm font-medium !text-black">Vehicle Model</label>
           <input
             type="text"
             value={formData.vehicle?.model}
-            onChange={(e) => setFormData({
-              ...formData,
-              vehicle: { ...formData.vehicle!, model: e.target.value }
-            })}
-            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+            onChange={(e) => {
+              const newModel = e.target.value;
+              // Save to localStorage whenever the value changes
+              localStorage.setItem('lastVehicleModel', newModel);
+              // Update form state
+              setFormData({
+                ...formData,
+                vehicle: { ...formData.vehicle!, model: newModel }
+              });
+            }}
+            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 !text-black"
           />
         </div>
         <div>

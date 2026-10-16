@@ -10,21 +10,20 @@ export interface TireMetadata {
   leftRegionDepth: number | null;
   centerRegionDepth: number | null;
   rightRegionDepth: number | null;
+  secondLeftRegionDepth: number | null;
+  secondCenterRegionDepth: number | null;
+  secondRightRegionDepth: number | null;
   brand: string;
   model: string;
-  customBrand?: string;
-  customModel?: string;
+  customBrand: string;
+  customModel: string;
   width: number;
   aspectRatio: number;
   diameter: number;
   construction: 'R' | 'B' | 'D';
   loadIndex: string;
   speedRating: string;
-  vehicle: {
-    make: string;
-    model: string;
-    year: number;
-  };
+  vehicle: Vehicle;
   weather: {
     condition: string;
     temperature: number;
@@ -38,17 +37,11 @@ export interface TireMetadata {
   originalVideoUrl: string;
 }
 
-export interface ExtractedFrame {
-  frameNumber: number;
-  blob: Blob;
-  url: string;
-  cloudinaryUrl?: string;
-}
-
 export interface Vehicle {
   make: string;
   model: string;
   year: number;
+  otherMake?: string;
 }
 
 export interface Weather {
