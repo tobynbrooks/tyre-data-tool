@@ -10,6 +10,9 @@ export interface TireMetadata {
   leftRegionDepth: number | null;
   centerRegionDepth: number | null;
   rightRegionDepth: number | null;
+  secondLeftRegionDepth: number | null;
+  secondCenterRegionDepth: number | null;
+  secondRightRegionDepth: number | null;
   brand: string;
   model: string;
   customBrand: string;
